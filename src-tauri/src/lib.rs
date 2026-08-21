@@ -1,4 +1,5 @@
 mod commands;
+mod db;
 mod engine;
 mod platform;
 mod state;
@@ -54,6 +55,11 @@ pub fn run() {
             commands::open_workspace,
             commands::set_blur_hide_suppressed,
             commands::list_providers,
+            commands::active_conversation,
+            commands::list_conversations,
+            commands::load_conversation,
+            commands::rename_conversation,
+            commands::delete_conversation,
             commands::run_prompt,
             commands::cancel_run,
         ])
@@ -71,6 +77,13 @@ pub fn run() {
         .setup(|app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+            let data_dir = app.path().app_data_dir()?;
+            let db = db::Db::open(&data_dir.join("starlux.db"))?;
+            if let Ok(Some(id)) = db.setting(db::ACTIVE_CONVERSATION) {
+                app.state::<AppState>().set_active_conversation(id);
+            }
+            app.manage(db);
 
             windows::setup(app.handle())?;
             // Shown here rather than via tauri.conf `visible`, so the first

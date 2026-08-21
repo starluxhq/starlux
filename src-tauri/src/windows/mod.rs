@@ -10,12 +10,15 @@ use generic as imp;
 
 use std::sync::OnceLock;
 
-use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
 use crate::state::AppState;
 
 pub const QUICKBAR: &str = "quickbar";
 pub const WORKSPACE: &str = "workspace";
+
+/// Tells the Workspace which conversation to show when it comes up.
+const FOCUS_EVENT: &str = "starlux://focus";
 
 fn window(app: &AppHandle, label: &str) -> tauri::Result<WebviewWindow> {
     app.get_webview_window(label)
@@ -63,7 +66,12 @@ pub fn open_workspace(app: &AppHandle) -> tauri::Result<()> {
     let _ = hide_quickbar(app);
     imp::before_workspace_shown(app);
     workspace.show()?;
-    workspace.set_focus()
+    workspace.set_focus()?;
+    app.emit_to(
+        WORKSPACE,
+        FOCUS_EVENT,
+        app.state::<AppState>().active_conversation(),
+    )
 }
 
 pub fn hide_workspace(app: &AppHandle) -> tauri::Result<()> {

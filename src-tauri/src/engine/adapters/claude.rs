@@ -178,6 +178,7 @@ mod tests {
     fn request() -> RunRequest {
         RunRequest {
             run_id: "run-1".into(),
+            conversation_id: "conv-1".into(),
             provider_id: "claude-cli".into(),
             prompt: "count to 3".into(),
             session_id: None,

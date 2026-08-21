@@ -1,8 +1,10 @@
 use tauri::ipc::Channel;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter, Manager, Window};
 
+use crate::db::{self, Conversation, Message, Thread};
 use crate::engine::cli::{self, Runs};
 use crate::engine::providers::{self, Provider};
+use crate::engine::sink::Sink;
 use crate::engine::{RunRequest, StreamEvent};
 use crate::state::AppState;
 use crate::windows;
@@ -34,12 +36,89 @@ pub fn list_providers() -> Vec<Provider> {
 }
 
 #[tauri::command]
+pub fn active_conversation(state: tauri::State<'_, AppState>) -> Option<String> {
+    state.active_conversation()
+}
+
+#[tauri::command]
+pub async fn list_conversations(app: AppHandle) -> Result<Vec<Conversation>, String> {
+    db::query(&app, |db| db.list_conversations()).await
+}
+
+#[tauri::command]
+pub async fn load_conversation(app: AppHandle, id: String) -> Result<Option<Thread>, String> {
+    db::query(&app, move |db| db.thread(&id)).await
+}
+
+#[tauri::command]
+pub async fn rename_conversation(app: AppHandle, id: String, title: String) -> Result<(), String> {
+    db::query(&app, move |db| db.rename_conversation(&id, &title)).await?;
+    let _ = app.emit(db::CHANGED_EVENT, ());
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_conversation(app: AppHandle, id: String) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    if state.active_conversation().as_deref() == Some(id.as_str()) {
+        state.clear_active_conversation();
+    }
+    db::query(&app, move |db| {
+        if db.setting(db::ACTIVE_CONVERSATION)?.as_deref() == Some(id.as_str()) {
+            db.set_setting(db::ACTIVE_CONVERSATION, None)?;
+        }
+        db.delete_conversation(&id)
+    })
+    .await?;
+    let _ = app.emit(db::CHANGED_EVENT, ());
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn run_prompt(
     app: AppHandle,
+    window: Window,
     request: RunRequest,
     on_event: Channel<StreamEvent>,
 ) -> Result<(), String> {
-    cli::run(app, request, on_event).await
+    let conversation_id = request.conversation_id.clone();
+    let provider_id = request.provider_id.clone();
+    let prompt = request.prompt.clone();
+    let agent_dir = request
+        .agent_dir
+        .as_ref()
+        .map(|dir| dir.to_string_lossy().into_owned());
+    let question = Message {
+        id: format!("{}:u", request.run_id),
+        role: "user".to_owned(),
+        text: prompt.clone(),
+        model: None,
+        usage: None,
+        error: None,
+    };
+
+    // Written before the process starts, so a run that dies still leaves the
+    // question in history rather than a conversation that never happened.
+    let id = conversation_id.clone();
+    db::query(&app, move |db| {
+        db.ensure_conversation(&id, &prompt, &provider_id, agent_dir.as_deref())?;
+        db.set_setting(db::ACTIVE_CONVERSATION, Some(&id))?;
+        db.add_message(&id, &question)
+    })
+    .await?;
+    let _ = app.emit(db::CHANGED_EVENT, ());
+
+    app.state::<AppState>()
+        .set_active_conversation(conversation_id.clone());
+
+    let sink = Sink::new(
+        app.clone(),
+        window.label().to_owned(),
+        on_event,
+        conversation_id,
+        request.model.clone(),
+    );
+    cli::run(app, request, sink).await
 }
 
 #[tauri::command]
