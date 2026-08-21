@@ -1,6 +1,8 @@
 use serde_json::Value;
 
-use crate::engine::{CliAdapter, Invocation, ParseState, RunRequest, StreamEvent, Usage};
+use crate::engine::{
+    system_prompt, CliAdapter, Invocation, ParseState, RunRequest, StreamEvent, Usage,
+};
 
 pub struct ClaudeAdapter;
 
@@ -27,9 +29,18 @@ impl CliAdapter for ClaudeAdapter {
         // Chat-only unless the conversation opted into agent mode. `--bare` is
         // deliberately not used: it forces ANTHROPIC_API_KEY auth, which would
         // bypass the subscription this bridge exists to use.
+        //
+        // Chat-only also replaces the provider's prompt rather than adding to it,
+        // dropping a coding-agent preamble that costs around 25k input tokens a
+        // turn. Agent mode still needs that preamble, so it appends instead.
         if req.agent_dir.is_none() {
             args.push("--allowed-tools".into());
             args.push(String::new());
+            args.push("--system-prompt".into());
+            args.push(system_prompt::chat());
+        } else {
+            args.push("--append-system-prompt".into());
+            args.push(system_prompt::agent());
         }
 
         Invocation {
@@ -320,6 +331,38 @@ mod tests {
             .expect("chat-only runs must disable tools");
         assert_eq!(invocation.args[tools + 1], "");
         assert!(!invocation.args.iter().any(|arg| arg == "--bare"));
+    }
+
+    #[test]
+    fn chat_only_replaces_the_provider_prompt() {
+        let invocation = ClaudeAdapter.invocation(&request());
+
+        let prompt = invocation
+            .args
+            .iter()
+            .position(|arg| arg == "--system-prompt")
+            .expect("chat-only must replace the coding-agent preamble");
+        assert!(invocation.args[prompt + 1].starts_with("You are Starlux"));
+        // Appending would keep the preamble the replacement exists to drop.
+        assert!(!invocation
+            .args
+            .iter()
+            .any(|arg| arg == "--append-system-prompt"));
+    }
+
+    #[test]
+    fn agent_mode_appends_to_the_provider_prompt() {
+        let mut req = request();
+        req.agent_dir = Some(PathBuf::from("/tmp/project"));
+        let invocation = ClaudeAdapter.invocation(&req);
+
+        let prompt = invocation
+            .args
+            .iter()
+            .position(|arg| arg == "--append-system-prompt")
+            .expect("agent mode must keep the provider's tool instructions");
+        assert!(invocation.args[prompt + 1].contains("starlux-widget"));
+        assert!(!invocation.args.iter().any(|arg| arg == "--system-prompt"));
     }
 
     #[test]
