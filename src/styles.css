@@ -1,10 +1,6 @@
 @import "tailwindcss";
 
-/*
- * The Quick Bar is a transparent, frameless window: the page itself must not
- * paint a background, or it will show as an opaque rectangle over the desktop.
- * Surfaces are painted by components instead.
- */
+/* Transparent window: the page must not paint a background. */
 html,
 body,
 #root {

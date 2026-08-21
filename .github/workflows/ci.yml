@@ -1,7 +1,3 @@
-# Builds and checks Starlux on all three target platforms. Window behaviour,
-# the CLI engine, and streaming all diverge per-OS, so a green Linux build
-# proves very little on its own.
-
 name: CI
 
 on:
@@ -9,7 +5,6 @@ on:
   push:
     branches: ["main"]
 
-# Read-only by default; no job here needs to write to the repository.
 permissions:
   contents: read
 
@@ -43,8 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      # Tauri's Linux backend is WebKitGTK; without these the crate won't even
-      # configure. macOS and Windows get their webview from the OS.
+      # Tauri's Linux webview is WebKitGTK; the crate will not configure without these.
       - name: Install Linux dependencies
         if: matrix.os == 'ubuntu-latest'
         run: |
