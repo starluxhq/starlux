@@ -4,14 +4,24 @@ mod platform;
 mod state;
 mod windows;
 
-use tauri::{Manager, WindowEvent};
+use tauri::{Emitter, Manager, WindowEvent};
 
 use state::AppState;
 
 fn handle_argv(app: &tauri::AppHandle, argv: &[String]) {
-    let _ = if argv.iter().any(|a| a == "--workspace") {
+    if let Some(prompt) = argv
+        .iter()
+        .position(|arg| arg == "--ask")
+        .and_then(|at| argv.get(at + 1))
+    {
+        let _ = windows::show_quickbar(app);
+        let _ = app.emit_to(windows::QUICKBAR, "starlux://ask", prompt.clone());
+        return;
+    }
+
+    let _ = if argv.iter().any(|arg| arg == "--workspace") {
         windows::open_workspace(app)
-    } else if argv.iter().any(|a| a == "--toggle") {
+    } else if argv.iter().any(|arg| arg == "--toggle") {
         windows::toggle_quickbar(app)
     } else {
         windows::show_quickbar(app)
@@ -54,6 +64,16 @@ pub fn run() {
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             windows::setup(app.handle())?;
+
+            let argv: Vec<String> = std::env::args().collect();
+            if argv.iter().any(|arg| arg == "--ask") {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+                    handle_argv(&handle, &argv);
+                });
+            }
+
             Ok(())
         })
         .run(tauri::generate_context!())
