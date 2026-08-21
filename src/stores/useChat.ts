@@ -43,6 +43,29 @@ const upsert = (turns: Turn[], turn: Turn): Turn[] =>
 const patch = (turns: Turn[], id: string, change: Partial<Turn>): Turn[] =>
   turns.map((turn) => (turn.id === id ? { ...turn, ...change } : turn));
 
+const pending = new Map<string, string>();
+let frame = 0;
+
+function flush() {
+  frame = 0;
+  if (pending.size === 0) return;
+  const batch = new Map(pending);
+  pending.clear();
+  useChat.setState((state) => ({
+    turns: state.turns.map((turn) => {
+      const delta = batch.get(turn.id);
+      return delta === undefined ? turn : { ...turn, text: turn.text + delta };
+    }),
+  }));
+}
+
+/** Deltas land every few characters; re-parsing the markdown that often is what
+ *  makes an answer tear while it streams. */
+function queue(runId: string, delta: string) {
+  pending.set(runId, (pending.get(runId) ?? "") + delta);
+  frame ||= requestAnimationFrame(flush);
+}
+
 const toTurn = (message: Message): Turn => ({
   id: message.id,
   role: message.role,
@@ -72,7 +95,15 @@ export const useChat = create<ChatState>((set, get) => ({
   newConversation: () =>
     set({ conversationId: null, sessionId: null, turns: [], status: "idle", runId: null }),
 
-  apply: (event) =>
+  apply: (event) => {
+    if (event.kind === "chunk") {
+      queue(event.runId, event.delta);
+      return;
+    }
+    // The final text is authoritative, so anything still buffered would only
+    // append itself a second time.
+    if (event.kind === "end" || event.kind === "error") pending.delete(event.runId);
+
     set((state) => {
       switch (event.kind) {
         case "start": {
@@ -92,12 +123,6 @@ export const useChat = create<ChatState>((set, get) => ({
               text: "",
               model: state.model,
             }),
-          };
-        }
-        case "chunk": {
-          const answer = state.turns.find((turn) => turn.id === event.runId);
-          return {
-            turns: patch(state.turns, event.runId, { text: (answer?.text ?? "") + event.delta }),
           };
         }
         case "meta":
@@ -128,7 +153,8 @@ export const useChat = create<ChatState>((set, get) => ({
             }),
           };
       }
-    }),
+    });
+  },
 
   openConversation: async (id) => {
     const thread = await loadConversation(id);
