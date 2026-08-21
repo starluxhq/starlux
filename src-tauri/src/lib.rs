@@ -32,11 +32,20 @@ fn handle_argv(app: &tauri::AppHandle, argv: &[String]) {
 pub fn run() {
     platform::prepare_graphics();
 
-    tauri::Builder::default()
+    #[allow(unused_mut)]
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             handle_argv(app, &argv);
         }))
-        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_opener::init());
+
+    // Registers WebviewPanelManager; without it `to_panel()` panics at startup.
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.plugin(tauri_nspanel::init());
+    }
+
+    builder
         .manage(AppState::default())
         .manage(engine::cli::Runs::default())
         .invoke_handler(tauri::generate_handler![
