@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import Answer from "../components/Answer";
+import ArtifactViewer from "../components/ArtifactViewer";
 import Composer from "../components/Composer";
 import ConversationList from "../components/ConversationList";
 import ModelBadge from "../components/ModelBadge";
 import Rail from "../components/Rail";
 import { onConversationsChanged, onFocusConversation, onStream } from "../lib/events";
 import { activeConversation } from "../lib/ipc";
+import { useArtifact } from "../stores/useArtifact";
 import { applyMirrored, useChat } from "../stores/useChat";
 import { useConversations } from "../stores/useConversations";
 
@@ -25,6 +27,7 @@ export default function Workspace() {
     stop,
   } = useChat();
   const { items, load, remove } = useConversations();
+  const { expanded, collapse } = useArtifact();
 
   useEffect(() => {
     void loadProviders();
@@ -47,7 +50,9 @@ export default function Workspace() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const accel = event.metaKey || event.ctrlKey;
-      if (event.key === "Escape" && status === "streaming") void stop();
+      // An open artifact is the nearest thing to dismiss, so it goes first.
+      if (event.key === "Escape" && expanded) collapse();
+      else if (event.key === "Escape" && status === "streaming") void stop();
       if (accel && event.key.toLowerCase() === "n") {
         event.preventDefault();
         setDraft("");
@@ -56,7 +61,7 @@ export default function Workspace() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [status, stop, newConversation]);
+  }, [status, stop, newConversation, expanded, collapse]);
 
   const provider = providers.find((candidate) => candidate.id === providerId);
 
@@ -138,6 +143,17 @@ export default function Workspace() {
           />
         </div>
       </main>
+
+      {expanded ? (
+        <aside className="flex w-[46%] min-w-0 shrink-0 flex-col border-l border-white/6">
+          <ArtifactViewer
+            html={expanded.html}
+            title={expanded.title}
+            variant="pane"
+            onCollapse={collapse}
+          />
+        </aside>
+      ) : null}
     </div>
   );
 }

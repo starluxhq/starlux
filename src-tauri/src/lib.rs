@@ -1,3 +1,4 @@
+mod artifacts;
 mod commands;
 mod db;
 mod engine;
@@ -48,13 +49,21 @@ pub fn run() {
 
     builder
         .manage(AppState::default())
+        .manage(artifacts::Artifacts::default())
         .manage(engine::cli::Runs::default())
+        .register_uri_scheme_protocol("artifact", |ctx, request| {
+            artifacts::response(
+                ctx.app_handle().state::<artifacts::Artifacts>().inner(),
+                request.uri().path(),
+            )
+        })
         .invoke_handler(tauri::generate_handler![
             commands::hide_quickbar,
             commands::toggle_quickbar,
             commands::open_workspace,
             commands::set_blur_hide_suppressed,
             commands::list_providers,
+            commands::store_artifact,
             commands::active_conversation,
             commands::list_conversations,
             commands::load_conversation,
