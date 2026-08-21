@@ -1,0 +1,6 @@
+#!/bin/sh
+# Runs the same checks CI does, so a red build is caught before it is pushed.
+# Skip a one-off with `git push --no-verify`.
+set -e
+echo "pre-push: running checks…"
+npm run --silent check

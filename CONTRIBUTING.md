@@ -46,16 +46,29 @@ Types in use: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `perf`, `ci`.
 
 ## Before you open a PR
 
+Install the repo's git hooks once after cloning:
+
 ```sh
-npx tsc --noEmit                      # frontend types
-cargo clippy --all-targets -- -D warnings   # in src-tauri/
-cargo fmt --check                     # in src-tauri/
-cargo test                            # in src-tauri/
+sh scripts/install-hooks.sh
+```
+
+That points git at `.githooks/`, whose `pre-push` hook runs the same checks CI
+does. To run them by hand:
+
+```sh
+npm run check                          # typecheck, build, fmt, clippy, tests
 npx react-doctor@latest --scope changed
 ```
 
 CI runs a build matrix across Linux, macOS, and Windows, plus React Doctor on
-changed files.
+changed files. Note that `cargo clippy` only ever compiles *your* platform's
+code — the `windows/macos.rs` and `windows/generic.rs` paths are mutually
+exclusive, so a clean local run says nothing about the other two. Expect the
+matrix to be the first thing that compiles your cross-platform code.
+
+Avoid amending or force-pushing a branch that another branch has already merged
+from: the merge keeps the pre-amend commit, and you end up with both the old and
+new version of the change. Push a follow-up commit instead.
 
 ## Platform verification
 
