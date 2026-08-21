@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Base capability shared by every Starlux window",
+  "windows": ["quickbar", "workspace"],
+  "permissions": [
+    "core:default",
+    "opener:default"
+  ]
+}
