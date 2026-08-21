@@ -32,7 +32,7 @@ pub struct Usage {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum StreamEvent {
     Start {
         run_id: String,
