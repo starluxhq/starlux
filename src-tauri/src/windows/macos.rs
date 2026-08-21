@@ -6,7 +6,7 @@ use tauri::{ActivationPolicy, AppHandle, Manager, WebviewWindow};
 use tauri_nspanel::{
     tauri_panel, CollectionBehavior, ManagerExt, PanelLevel, StyleMask, WebviewWindowExt,
 };
-use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
+use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
 
 use super::QUICKBAR;
 
@@ -24,7 +24,14 @@ tauri_panel! {
 }
 
 pub fn configure_quickbar(window: &WebviewWindow) -> tauri::Result<()> {
-    let _ = apply_vibrancy(window, NSVisualEffectMaterial::HudWindow, None, Some(12.0));
+    // `Active` rather than the default: NSVisualEffectView otherwise follows the
+    // window's active state and turns opaque whenever the panel is not key.
+    let _ = apply_vibrancy(
+        window,
+        NSVisualEffectMaterial::HudWindow,
+        Some(NSVisualEffectState::Active),
+        Some(12.0),
+    );
 
     let panel = window.to_panel::<QuickBarPanel>()?;
     panel.set_level(PanelLevel::Floating.value());
