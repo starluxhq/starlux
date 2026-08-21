@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 interface ComposerProps {
   value: string;
@@ -7,6 +7,8 @@ interface ComposerProps {
   onSubmit: () => void;
   maxRows?: number;
 }
+
+const LINE_HEIGHT = 22;
 
 export default function Composer({
   value,
@@ -17,17 +19,28 @@ export default function Composer({
 }: ComposerProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
 
+  const fit = useCallback(() => {
+    const textarea = ref.current;
+    // Until the row has been laid out the textarea has no width, and WebKit
+    // then reports a scrollHeight with no relation to the content.
+    if (!textarea || textarea.clientWidth === 0) return;
+    textarea.style.height = "0px";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, LINE_HEIGHT * maxRows)}px`;
+  }, [maxRows]);
+
   useEffect(() => {
     ref.current?.focus();
   }, []);
 
+  useEffect(fit, [fit, value]);
+
   useEffect(() => {
-    const textarea = ref.current;
-    if (!textarea) return;
-    textarea.style.height = "auto";
-    const lineHeight = 22;
-    textarea.style.height = `${Math.min(textarea.scrollHeight, lineHeight * maxRows)}px`;
-  }, [value, maxRows]);
+    const row = ref.current?.parentElement;
+    if (!row) return;
+    const observer = new ResizeObserver(fit);
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [fit]);
 
   return (
     <div className="flex items-start gap-3">
@@ -47,7 +60,7 @@ export default function Composer({
             onSubmit();
           }
         }}
-        className="w-full resize-none bg-transparent text-[15px] leading-[22px] text-ink outline-none placeholder:text-faint"
+        className="min-w-0 flex-1 resize-none bg-transparent text-[15px] leading-[22px] text-ink outline-none placeholder:text-faint"
       />
     </div>
   );
