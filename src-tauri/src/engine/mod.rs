@@ -2,6 +2,7 @@ pub mod adapters;
 pub mod cli;
 pub mod providers;
 pub mod sink;
+pub mod system_prompt;
 
 use std::path::PathBuf;
 
