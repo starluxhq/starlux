@@ -1,0 +1,64 @@
+name: Bug report
+description: Something in Starlux is broken
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Press the hotkey
+        2. Type "..."
+        3. ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [Linux, macOS, Windows]
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
+      placeholder: "macOS 15.3 / Windows 11 23H2 / Arch, kernel 6.12"
+    validations:
+      required: true
+
+  - type: input
+    id: linux-session
+    attributes:
+      label: Linux only — desktop environment and session type
+      description: Output of `echo $XDG_CURRENT_DESKTOP $XDG_SESSION_TYPE`
+      placeholder: "KDE wayland"
+
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU and driver
+      description: Relevant for blank windows, blur, and resize crashes.
+      placeholder: "NVIDIA RTX 3070, driver 550"
+
+  - type: input
+    id: provider
+    attributes:
+      label: Provider involved
+      placeholder: "claude (CLI bridge) / OpenAI (API) / n/a"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or error output
+      render: shell
