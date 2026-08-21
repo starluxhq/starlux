@@ -10,8 +10,6 @@ use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 
 use super::QUICKBAR;
 
-// `panel_event!` requires an explicit return type, including `-> ()`.
-#[allow(clippy::unused_unit)]
 tauri_panel! {
     panel!(QuickBarPanel {
         config: {
