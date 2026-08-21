@@ -18,7 +18,16 @@ with nothing else inside the fence. Supported shapes:
 {\"type\":\"chart\",\"chart\":\"bar\"|\"line\",\"title\":string,\"x\":string[],\"series\":[{\"label\":string,\"values\":number[]}]}
 
 Prose may introduce a widget, but never restate the data it already carries. Use one \
-only when it earns its place; ordinary answers stay prose.";
+only when it earns its place; ordinary answers stay prose.
+
+Diagrams — flowcharts, sequences, state machines, timelines — go in a `mermaid` fence.
+
+When the answer is something to try rather than something to read, such as a simulation, \
+a visualisation or a small tool, emit a fenced block whose language is `starlux-artifact` \
+and whose body is one complete HTML document with all CSS and JavaScript inline. Name it \
+on the fence: ```starlux-artifact title=\"Orbit simulation\". It runs sandboxed with no \
+network access at all, so nothing may be loaded from a CDN and no fonts, styles or scripts \
+may be fetched. Everything it needs is in the document.";
 
 /// Replaces the provider's prompt for chat-only runs.
 pub fn chat() -> String {
@@ -47,6 +56,8 @@ mod tests {
         for prompt in [chat(), agent()] {
             assert!(prompt.contains("$$"));
             assert!(prompt.contains("starlux-widget"));
+            assert!(prompt.contains("starlux-artifact"));
+            assert!(prompt.contains("mermaid"));
         }
     }
 

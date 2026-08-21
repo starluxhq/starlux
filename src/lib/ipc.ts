@@ -5,6 +5,7 @@ export const hideQuickBar = () => invoke<void>("hide_quickbar");
 export const toggleQuickBar = () => invoke<void>("toggle_quickbar");
 export const openWorkspace = () => invoke<void>("open_workspace");
 export const listProviders = () => invoke<Provider[]>("list_providers");
+export const storeArtifact = (html: string) => invoke<string>("store_artifact", { html });
 export const cancelRun = (runId: string) => invoke<boolean>("cancel_run", { runId });
 
 export const activeConversation = () => invoke<string | null>("active_conversation");

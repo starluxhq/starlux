@@ -125,3 +125,10 @@ pub async fn run_prompt(
 pub fn cancel_run(state: tauri::State<'_, Runs>, run_id: String) -> bool {
     state.cancel(&run_id)
 }
+
+/// Hands an interactive answer to the `artifact:` scheme and returns its id, so
+/// the webview can frame it as a document with its own policy.
+#[tauri::command]
+pub fn store_artifact(app: AppHandle, html: String) -> String {
+    app.state::<crate::artifacts::Artifacts>().put(html)
+}

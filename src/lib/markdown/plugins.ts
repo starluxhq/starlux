@@ -1,9 +1,11 @@
 import type { PluginConfig } from "streamdown";
 
+import Artifact from "../../components/widgets/Artifact";
 import Chart from "../../components/widgets/Chart";
 import Table from "../../components/widgets/Table";
 import Widget from "../../components/widgets/Widget";
 import { code } from "./code";
+import { diagram } from "./diagram";
 import { math } from "./math";
 import { registerWidget } from "./widgets/registry";
 import { isChartWidget, isTableWidget } from "./widgets/shapes";
@@ -13,11 +15,18 @@ import { isChartWidget, isTableWidget } from "./widgets/shapes";
  *  would mean registering each one here as well as teaching the model about it. */
 export const WIDGET_LANGUAGE = "starlux-widget";
 
+/** Interactive documents, framed rather than parsed, so they get their own file. */
+export const ARTIFACT_LANGUAGE = "starlux-artifact";
+
 registerWidget("table", { match: isTableWidget, component: Table });
 registerWidget("chart", { match: isChartWidget, component: Chart });
 
 export const markdown: PluginConfig = {
   code,
   math,
-  renderers: [{ language: WIDGET_LANGUAGE, component: Widget }],
+  mermaid: diagram,
+  renderers: [
+    { language: WIDGET_LANGUAGE, component: Widget },
+    { language: ARTIFACT_LANGUAGE, component: Artifact },
+  ],
 };
