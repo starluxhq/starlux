@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+/* Transparent window: the page must not paint a background. */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: transparent;
+}
+
+body {
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+}
