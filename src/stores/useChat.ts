@@ -135,11 +135,11 @@ export const useChat = create<ChatState>((set, get) => ({
     if (!thread) return;
     set((state) => {
       const turns = thread.messages.map(toTurn);
-      const { runId } = state;
-      if (runId && state.conversationId === id) {
+      // Keep anything the database has not caught up with yet, which is how a
+      // run still streaming survives its own history load.
+      if (state.conversationId === id) {
         for (const turn of state.turns) {
-          const inFlight = turn.id === runId || turn.id === questionId(runId);
-          if (inFlight && !turns.some((loaded) => loaded.id === turn.id)) turns.push(turn);
+          if (!turns.some((loaded) => loaded.id === turn.id)) turns.push(turn);
         }
       }
       return {
@@ -182,9 +182,14 @@ export const useChat = create<ChatState>((set, get) => ({
 /** Applies a run owned by the other window, pulling in its history if it is a
  *  thread this window was not already showing. */
 export function applyMirrored(event: StreamEvent) {
-  const previous = useChat.getState().conversationId;
-  useChat.getState().apply(event);
-  if (event.kind === "start" && previous !== event.conversationId) {
+  const store = useChat.getState();
+  if (event.kind === "start" && store.conversationId !== event.conversationId) {
+    // The thread on screen is dropped before the new turns land, so the old one
+    // is never briefly shown with the new question appended to it.
+    store.newConversation();
+    useChat.getState().apply(event);
     void useChat.getState().openConversation(event.conversationId);
+    return;
   }
+  store.apply(event);
 }
