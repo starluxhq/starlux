@@ -8,6 +8,14 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [react(), tailwindcss()],
   clearScreen: false,
+  build: {
+    rollupOptions: {
+      input: {
+        quickbar: "index.html",
+        workspace: "workspace.html",
+      },
+    },
+  },
   server: {
     port: 1420,
     strictPort: true,
