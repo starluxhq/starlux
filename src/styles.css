@@ -1,6 +1,35 @@
 @import "tailwindcss";
+@source "../node_modules/streamdown/dist/index.js";
 
-/* Transparent window: the page must not paint a background. */
+@import "@fontsource/instrument-sans/400.css";
+@import "@fontsource/instrument-sans/500.css";
+@import "@fontsource/instrument-sans/600.css";
+@import "@fontsource/instrument-serif/400.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+
+@theme {
+  --color-void: #08090c;
+  --color-dust: #12141a;
+  --color-haze: #1c1f28;
+  --color-rule: #333846;
+  --color-ink: #eef1f6;
+  --color-muted: #848c9f;
+  --color-faint: #5a6173;
+
+  /* Stellar spectral classes, hot to cool. Providers are assigned a class so
+     they stay distinguishable at a glance as more are added. */
+  --color-class-a: #a9c7ff;
+  --color-class-f: #f4f6fb;
+  --color-class-g: #ffd9a0;
+  --color-class-k: #ffab63;
+  --color-class-m: #ff6f5e;
+
+  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
 html,
 body,
 #root {
@@ -11,6 +40,67 @@ body,
 
 body {
   overflow: hidden;
-  -webkit-user-select: none;
-  user-select: none;
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* macOS and Windows composite real vibrancy behind the webview, so the page
+   stays mostly transparent to let it through. Linux has no such API, and
+   backdrop-filter cannot reach past the page into the desktop. Translucency
+   there only ghosts whatever sits behind, so the surface is opaque instead. */
+.surface {
+  background: color-mix(in srgb, var(--color-void) 82%, transparent);
+}
+
+[data-platform="linux"] .surface {
+  background: var(--color-void);
+}
+
+.rail {
+  background: var(--color-rule);
+}
+
+.rail[data-state="streaming"] {
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    var(--color-class-a) 16%,
+    var(--color-class-f) 32%,
+    var(--color-class-k) 48%,
+    transparent 64%
+  );
+  background-size: 100% 220%;
+  animation: spectrum-travel 2.6s linear infinite;
+}
+
+.rail[data-state="error"] {
+  background: var(--color-class-m);
+}
+
+@keyframes spectrum-travel {
+  from {
+    background-position: 0 -120%;
+  }
+  to {
+    background-position: 0 220%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rail[data-state="streaming"] {
+    animation: none;
+    background: var(--color-class-a);
+  }
+}
+
+:focus-visible {
+  outline: 1px solid var(--color-class-a);
+  outline-offset: 2px;
+}
+
+/* The composer holds focus for the window's whole life; a ring around it is
+   permanent chrome, not a focus cue. */
+textarea:focus-visible {
+  outline: none;
 }
