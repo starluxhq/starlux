@@ -1,6 +1,7 @@
 pub mod adapters;
 pub mod cli;
 pub mod providers;
+pub mod sink;
 
 use std::path::PathBuf;
 
@@ -10,6 +11,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct RunRequest {
     pub run_id: String,
+    pub conversation_id: String,
     pub provider_id: String,
     pub prompt: String,
     #[serde(default)]
@@ -40,7 +42,9 @@ pub struct Usage {
 pub enum StreamEvent {
     Start {
         run_id: String,
+        conversation_id: String,
         provider_id: String,
+        prompt: String,
     },
     Chunk {
         run_id: String,

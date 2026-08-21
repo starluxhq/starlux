@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 import Answer from "../components/Answer";
 import Composer from "../components/Composer";
 import Keycap from "../components/Keycap";
 import ModelBadge from "../components/ModelBadge";
 import Rail from "../components/Rail";
+import { onAsk, onStream } from "../lib/events";
 import { hideQuickBar, openWorkspace } from "../lib/ipc";
-import { useChat } from "../stores/useChat";
+import { applyMirrored, useChat } from "../stores/useChat";
 
 export default function QuickBar() {
   const [draft, setDraft] = useState("");
-  const { providers, providerId, model, turns, status, send, stop, loadProviders } = useChat();
+  const { providers, providerId, model, turns, status, send, stop, loadProviders, newConversation } =
+    useChat();
   const scroller = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -21,15 +22,16 @@ export default function QuickBar() {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
   }, [turns]);
 
-  useEffect(() => {
-    const unlisten = listen<string>("starlux://ask", (event) => {
-      setDraft("");
-      void send(event.payload);
-    });
-    return () => {
-      void unlisten.then((off) => off());
-    };
-  }, [send]);
+  useEffect(() => onStream(applyMirrored), []);
+
+  useEffect(
+    () =>
+      onAsk((prompt) => {
+        setDraft("");
+        void send(prompt);
+      }),
+    [send],
+  );
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -44,11 +46,16 @@ export default function QuickBar() {
         event.preventDefault();
         void openWorkspace();
       }
+      if (accel && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        setDraft("");
+        newConversation();
+      }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [status, stop]);
+  }, [status, stop, newConversation]);
 
   const provider = providers.find((candidate) => candidate.id === providerId);
   const answers = turns.filter((turn) => turn.role === "assistant");
@@ -100,6 +107,7 @@ export default function QuickBar() {
               <Keycap label="send">⏎</Keycap>
             )}
             <Keycap label="expand">⌘E</Keycap>
+            {hasConversation ? <Keycap label="new">⌘N</Keycap> : null}
           </div>
         </div>
       </div>

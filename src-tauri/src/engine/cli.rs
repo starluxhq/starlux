@@ -2,11 +2,11 @@ use std::collections::{HashMap, VecDeque};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 
-use tauri::ipc::Channel;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::oneshot;
 
+use super::sink::Sink;
 use super::{adapters, ParseState, RunRequest, StreamEvent};
 
 const STDERR_TAIL_LINES: usize = 20;
@@ -31,11 +31,7 @@ impl Runs {
     }
 }
 
-pub async fn run(
-    app: tauri::AppHandle,
-    req: RunRequest,
-    channel: Channel<StreamEvent>,
-) -> Result<(), String> {
+pub async fn run(app: tauri::AppHandle, req: RunRequest, sink: Sink) -> Result<(), String> {
     use tauri::Manager;
 
     let adapter = adapters::for_provider(&req.provider_id)
@@ -94,11 +90,11 @@ pub async fn run(
     let (cancel_tx, mut cancel_rx) = oneshot::channel();
     app.state::<Runs>().register(req.run_id.clone(), cancel_tx);
 
-    let send = |event: StreamEvent| channel.send(event).map_err(|err| err.to_string());
-
-    send(StreamEvent::Start {
+    sink.send(StreamEvent::Start {
         run_id: req.run_id.clone(),
+        conversation_id: sink.conversation_id(),
         provider_id: req.provider_id.clone(),
+        prompt: req.prompt.clone(),
     })?;
 
     let stdout = child.stdout.take().expect("stdout piped");
@@ -111,12 +107,12 @@ pub async fn run(
             line = lines.next_line() => match line {
                 Ok(Some(line)) => {
                     for event in adapter.parse_line(&line, &mut state, &req) {
-                        send(event)?;
+                        sink.send(event)?;
                     }
                 }
                 Ok(None) => break,
                 Err(err) => {
-                    send(StreamEvent::Error {
+                    sink.send(StreamEvent::Error {
                         run_id: req.run_id.clone(),
                         message: format!("could not read output: {err}"),
                         stderr_tail: tail_text(&stderr_tail),
@@ -135,8 +131,18 @@ pub async fn run(
     let status = child.wait().await;
     app.state::<Runs>().finish(&req.run_id);
 
-    if state.ended || cancelled {
+    if state.ended {
         return Ok(());
+    }
+
+    // Stopping keeps whatever streamed in rather than discarding the turn.
+    if cancelled {
+        return sink.send(StreamEvent::End {
+            run_id: req.run_id.clone(),
+            text: state.text.clone(),
+            session_id: state.session_id.clone(),
+            usage: None,
+        });
     }
 
     let message = match status {
@@ -147,7 +153,7 @@ pub async fn run(
         Err(err) => format!("`{}` could not be waited on: {err}", invocation.program),
     };
 
-    send(StreamEvent::Error {
+    sink.send(StreamEvent::Error {
         run_id: req.run_id.clone(),
         message,
         stderr_tail: tail_text(&stderr_tail),

@@ -5,7 +5,7 @@ export interface Usage {
 }
 
 export type StreamEvent =
-  | { kind: "start"; runId: string; providerId: string }
+  | { kind: "start"; runId: string; conversationId: string; providerId: string; prompt: string }
   | { kind: "chunk"; runId: string; delta: string }
   | { kind: "meta"; runId: string; sessionId: string | null; model: string | null }
   | { kind: "end"; runId: string; text: string; sessionId: string | null; usage: Usage | null }
@@ -13,11 +13,36 @@ export type StreamEvent =
 
 export interface RunRequest {
   runId: string;
+  conversationId: string;
   providerId: string;
   prompt: string;
   sessionId?: string | null;
   model?: string | null;
   agentDir?: string | null;
+}
+
+export interface Conversation {
+  id: string;
+  title: string;
+  providerId: string;
+  sessionId: string | null;
+  model: string | null;
+  agentDir: string | null;
+  updatedAt: number;
+}
+
+export interface Message {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  model: string | null;
+  usage: Usage | null;
+  error: string | null;
+}
+
+export interface Thread {
+  conversation: Conversation;
+  messages: Message[];
 }
 
 export interface Provider {
