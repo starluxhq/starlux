@@ -1,10 +1,11 @@
 use std::sync::Mutex;
 
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Emitter, EventTarget};
+use tauri::{AppHandle, Emitter};
 
 use super::StreamEvent;
 use crate::db::{self, Message};
+use crate::windows::{QUICKBAR, WORKSPACE};
 
 pub const STREAM_EVENT: &str = "starlux://stream";
 
@@ -12,7 +13,7 @@ pub const STREAM_EVENT: &str = "starlux://stream";
 /// window so expanding mid-stream keeps the answer, and the database.
 pub struct Sink {
     app: AppHandle,
-    origin: String,
+    peer: &'static str,
     channel: Channel<StreamEvent>,
     conversation_id: String,
     model: Mutex<Option<String>>,
@@ -28,7 +29,11 @@ impl Sink {
     ) -> Self {
         Self {
             app,
-            origin,
+            peer: if origin == QUICKBAR {
+                WORKSPACE
+            } else {
+                QUICKBAR
+            },
             channel,
             conversation_id,
             model: Mutex::new(model),
@@ -42,13 +47,7 @@ impl Sink {
     pub fn send(&self, event: StreamEvent) -> Result<(), String> {
         self.persist(&event);
 
-        let origin = self.origin.clone();
-        let _ = self
-            .app
-            .emit_filter(STREAM_EVENT, event.clone(), move |target| match target {
-                EventTarget::WebviewWindow { label } => *label != origin,
-                _ => false,
-            });
+        let _ = self.app.emit_to(self.peer, STREAM_EVENT, event.clone());
 
         self.channel.send(event).map_err(|err| err.to_string())
     }
