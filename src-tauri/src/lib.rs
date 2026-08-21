@@ -73,6 +73,10 @@ pub fn run() {
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             windows::setup(app.handle())?;
+            // Shown here rather than via tauri.conf `visible`, so the first
+            // show goes through the same path as every later one. On macOS
+            // that is what makes the panel key and able to take keystrokes.
+            let _ = windows::show_quickbar(app.handle());
 
             let argv: Vec<String> = std::env::args().collect();
             if argv.iter().any(|arg| arg == "--ask") {
