@@ -1,4 +1,5 @@
 mod commands;
+mod engine;
 mod platform;
 mod state;
 mod windows;
@@ -27,11 +28,15 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .manage(AppState::default())
+        .manage(engine::cli::Runs::default())
         .invoke_handler(tauri::generate_handler![
             commands::hide_quickbar,
             commands::toggle_quickbar,
             commands::open_workspace,
             commands::set_blur_hide_suppressed,
+            commands::list_providers,
+            commands::run_prompt,
+            commands::cancel_run,
         ])
         .on_window_event(|window, event| match (window.label(), event) {
             #[cfg(not(target_os = "macos"))]
