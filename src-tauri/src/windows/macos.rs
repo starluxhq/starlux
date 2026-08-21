@@ -1,3 +1,7 @@
+// `panel_event!` mandates an explicit `-> ()`, and attributes on macro
+// invocations are ignored, so this allow has to be file-scoped.
+#![allow(clippy::unused_unit)]
+
 use tauri::{ActivationPolicy, AppHandle, Manager, WebviewWindow};
 use tauri_nspanel::{
     tauri_panel, CollectionBehavior, ManagerExt, PanelLevel, StyleMask, WebviewWindowExt,
