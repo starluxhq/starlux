@@ -1,17 +1,69 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Answer from "../components/Answer";
+import Composer from "../components/Composer";
+import ConversationList from "../components/ConversationList";
 import ModelBadge from "../components/ModelBadge";
 import Rail from "../components/Rail";
-import { useChat } from "../stores/useChat";
+import { onConversationsChanged, onFocusConversation, onStream } from "../lib/events";
+import { activeConversation } from "../lib/ipc";
+import { applyMirrored, useChat } from "../stores/useChat";
+import { useConversations } from "../stores/useConversations";
 
 export default function Workspace() {
-  const { providers, providerId, model, turns, status, loadProviders } = useChat();
+  const [draft, setDraft] = useState("");
+  const {
+    providers,
+    providerId,
+    model,
+    turns,
+    status,
+    conversationId,
+    loadProviders,
+    openConversation,
+    newConversation,
+    send,
+    stop,
+  } = useChat();
+  const { items, load, remove } = useConversations();
 
   useEffect(() => {
     void loadProviders();
-  }, [loadProviders]);
+    void load();
+    void activeConversation().then((id) => {
+      if (id) void openConversation(id);
+    });
+  }, [loadProviders, load, openConversation]);
+
+  useEffect(() => onStream(applyMirrored), []);
+  useEffect(() => onConversationsChanged(() => void load()), [load]);
+  useEffect(
+    () =>
+      onFocusConversation((id) => {
+        if (id) void openConversation(id);
+      }),
+    [openConversation],
+  );
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const accel = event.metaKey || event.ctrlKey;
+      if (event.key === "Escape" && status === "streaming") void stop();
+      if (accel && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        setDraft("");
+        newConversation();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [status, stop, newConversation]);
 
   const provider = providers.find((candidate) => candidate.id === providerId);
+
+  const submit = () => {
+    void send(draft);
+    setDraft("");
+  };
 
   return (
     <div className="flex h-full bg-void text-ink">
@@ -19,15 +71,29 @@ export default function Workspace() {
         <div className="px-5 py-4">
           <span className="font-serif text-[19px] tracking-tight">Starlux</span>
         </div>
-        <div className="px-5 pb-3">
-          <p className="font-mono text-[10px] tracking-wider text-faint uppercase">
-            Conversations
-          </p>
+        <div className="flex items-baseline justify-between px-5 pb-3">
+          <p className="font-mono text-[10px] tracking-wider text-faint uppercase">Conversations</p>
+          <button
+            type="button"
+            onClick={() => {
+              setDraft("");
+              newConversation();
+            }}
+            className="font-mono text-[10px] tracking-wider text-muted uppercase hover:text-ink"
+          >
+            New
+          </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-2">
-          <p className="px-3 py-2 text-[12.5px] text-faint">
-            Conversations you start will collect here.
-          </p>
+        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+          <ConversationList
+            items={items}
+            activeId={conversationId}
+            onOpen={(id) => void openConversation(id)}
+            onDelete={(id) => {
+              if (id === conversationId) newConversation();
+              void remove(id);
+            }}
+          />
         </div>
       </aside>
 
@@ -60,6 +126,16 @@ export default function Workspace() {
               </article>
             ))
           )}
+        </div>
+
+        <div className="shrink-0 border-t border-white/6 px-6 py-4">
+          <Composer
+            value={draft}
+            placeholder={turns.length > 0 ? "Ask a follow-up" : "Ask anything"}
+            onChange={setDraft}
+            onSubmit={submit}
+            maxRows={8}
+          />
         </div>
       </main>
     </div>
