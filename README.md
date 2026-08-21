@@ -81,6 +81,11 @@ starlux --toggle
 On KDE, `scripts/install-kde-shortcut.sh` does this for you. On X11, macOS, and
 Windows the hotkey registers natively with no setup.
 
+### Development
+
+The Quick Bar hides as soon as it loses focus, which makes it hard to inspect or
+screenshot. Run with `STARLUX_NO_BLUR_HIDE=1` to keep it on screen.
+
 ### Troubleshooting
 
 If the window is blank or crashes on resize (most often NVIDIA + Wayland), run

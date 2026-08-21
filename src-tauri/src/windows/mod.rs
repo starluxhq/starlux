@@ -8,6 +8,8 @@ mod generic;
 #[cfg(not(target_os = "macos"))]
 use generic as imp;
 
+use std::sync::OnceLock;
+
 use tauri::{AppHandle, Manager, WebviewWindow};
 
 use crate::state::AppState;
@@ -40,7 +42,17 @@ pub fn toggle_quickbar(app: &AppHandle) -> tauri::Result<()> {
     }
 }
 
+/// Set `STARLUX_NO_BLUR_HIDE=1` to keep the bar up when it loses focus, which
+/// is what makes it possible to screenshot or inspect.
+fn blur_hide_disabled() -> bool {
+    static DISABLED: OnceLock<bool> = OnceLock::new();
+    *DISABLED.get_or_init(|| std::env::var_os("STARLUX_NO_BLUR_HIDE").is_some())
+}
+
 pub fn hide_quickbar_on_blur(app: &AppHandle) {
+    if blur_hide_disabled() {
+        return;
+    }
     if !app.state::<AppState>().blur_hide_suppressed() {
         let _ = hide_quickbar(app);
     }
