@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+src-tauri/target/
+src-tauri/gen/
+
+# Local config and secrets
+.env
+.env.local
+*.local
+
+# Editors
+.idea/
+.DS_Store
+*.swp
+
+# Logs
+*.log
+npm-debug.log*
