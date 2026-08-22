@@ -1,7 +1,8 @@
 use serde_json::Value;
 
 use crate::engine::{
-    system_prompt, CliAdapter, Invocation, ParseState, RunRequest, StreamEvent, Usage,
+    now, system_prompt, CliAdapter, Invocation, ParseState, RateLimit, RunRequest, StreamEvent,
+    Usage,
 };
 
 /// Namespaced so a user's own agent of the same name is never the one that runs.
@@ -118,6 +119,13 @@ impl CliAdapter for ClaudeAdapter {
                     });
                 }
             }
+            // Not ours and not asked for: the CLI reports the subscription
+            // window on its own, and we were dropping it on the floor.
+            Some("rate_limit_event") => {
+                if let Some(limit) = rate_limit(&value, &req.provider_id) {
+                    events.push(StreamEvent::RateLimit { run_id, limit });
+                }
+            }
             Some("result") => {
                 state.ended = true;
                 let is_error = value
@@ -188,6 +196,28 @@ fn assistant_text(value: &Value) -> Option<String> {
         .filter_map(|block| block.get("text").and_then(Value::as_str))
         .collect();
     (!text.is_empty()).then_some(text)
+}
+
+fn rate_limit(value: &Value, provider_id: &str) -> Option<RateLimit> {
+    let info = value.get("rate_limit_info")?;
+    Some(RateLimit {
+        provider_id: provider_id.to_owned(),
+        kind: info
+            .get("rateLimitType")
+            .and_then(Value::as_str)?
+            .to_owned(),
+        status: info
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_owned(),
+        resets_at: info.get("resetsAt").and_then(Value::as_i64),
+        using_overage: info
+            .get("isUsingOverage")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        observed_at: now(),
+    })
 }
 
 fn usage(value: &Value) -> Option<Usage> {
@@ -329,6 +359,56 @@ mod tests {
             r#"{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"ok"}}}"#,
         ]);
         assert_eq!(chunks(&events), "ok");
+        assert!(!state.ended);
+    }
+
+    fn limits(events: &[StreamEvent]) -> Vec<&RateLimit> {
+        events
+            .iter()
+            .filter_map(|event| match event {
+                StreamEvent::RateLimit { limit, .. } => Some(limit),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn reports_the_subscription_window_the_cli_volunteers() {
+        let (events, _) = drain(&[
+            r#"{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","resetsAt":1787421000,"rateLimitType":"five_hour","overageStatus":"rejected","overageDisabledReason":"org_level_disabled","isUsingOverage":false}}"#,
+        ]);
+
+        let limit = limits(&events)[0];
+        assert_eq!(limit.provider_id, "claude-cli");
+        assert_eq!(limit.kind, "five_hour");
+        assert_eq!(limit.status, "allowed");
+        assert_eq!(limit.resets_at, Some(1787421000));
+        assert!(!limit.using_overage);
+        assert!(limit.observed_at > 0);
+    }
+
+    /// A window kind Anthropic adds later must reach the UI, which shows what
+    /// it does not recognise verbatim rather than hiding it.
+    #[test]
+    fn passes_through_a_window_kind_it_has_never_seen() {
+        let (events, _) = drain(&[
+            r#"{"type":"rate_limit_event","rate_limit_info":{"status":"allowed_warning","rateLimitType":"lunar_cycle","isUsingOverage":true}}"#,
+        ]);
+
+        let limit = limits(&events)[0];
+        assert_eq!(limit.kind, "lunar_cycle");
+        assert_eq!(limit.status, "allowed_warning");
+        assert_eq!(limit.resets_at, None);
+        assert!(limit.using_overage);
+    }
+
+    #[test]
+    fn a_rate_limit_event_without_a_window_kind_is_ignored() {
+        let (events, state) = drain(&[
+            r#"{"type":"rate_limit_event"}"#,
+            r#"{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"}}"#,
+        ]);
+        assert!(limits(&events).is_empty());
         assert!(!state.ended);
     }
 

@@ -30,6 +30,7 @@ export default function QuickBar() {
   const [picking, setPicking] = useState(false);
   const {
     providers,
+    limits,
     providerId,
     model,
     agentDir,
@@ -250,6 +251,7 @@ export default function QuickBar() {
           providers={available}
           providerId={providerId}
           model={model}
+          limits={limits}
           onSelect={(nextProvider, nextModel) => {
             selectModel(nextProvider, nextModel);
             setPicking(false);

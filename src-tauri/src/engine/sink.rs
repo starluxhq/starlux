@@ -82,6 +82,10 @@ impl Sink {
                 usage: usage.clone(),
                 error: None,
             }),
+            StreamEvent::RateLimit { limit, .. } => {
+                let limit = limit.clone();
+                db::write(&self.app, move |db| db.set_rate_limit(&limit));
+            }
             StreamEvent::Error {
                 run_id, message, ..
             } => self.persist_answer(Message {

@@ -7,7 +7,7 @@ use crate::db::{self, Conversation, Message, Thread};
 use crate::engine::cli::{self, Runs};
 use crate::engine::providers::{self, Provider};
 use crate::engine::sink::Sink;
-use crate::engine::{RunRequest, StreamEvent};
+use crate::engine::{RateLimit, RunRequest, StreamEvent};
 use crate::state::AppState;
 use crate::windows;
 
@@ -41,6 +41,14 @@ pub fn set_blur_hide_suppressed(state: tauri::State<'_, AppState>, suppressed: b
 #[tauri::command]
 pub fn list_providers() -> Vec<Provider> {
     providers::detect()
+}
+
+/// What the providers last said about the user's subscription windows. Read at
+/// startup so the bar has something to show before the first run of a launch
+/// refreshes it.
+#[tauri::command]
+pub async fn rate_limits(app: AppHandle) -> Result<Vec<RateLimit>, String> {
+    db::query(&app, |db| db.rate_limits()).await
 }
 
 #[derive(serde::Serialize)]

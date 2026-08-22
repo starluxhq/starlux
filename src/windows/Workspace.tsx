@@ -21,6 +21,7 @@ export default function Workspace() {
   const [picking, setPicking] = useState(false);
   const {
     providers,
+    limits,
     providerId,
     model,
     turns,
@@ -184,6 +185,7 @@ export default function Workspace() {
               providers={available}
               providerId={providerId}
               model={model}
+              limits={limits}
               onSelect={(nextProvider, nextModel) => {
                 selectModel(nextProvider, nextModel);
                 setPicking(false);

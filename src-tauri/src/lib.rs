@@ -88,6 +88,7 @@ pub fn run() {
             commands::open_workspace,
             commands::set_blur_hide_suppressed,
             commands::list_providers,
+            commands::rate_limits,
             commands::selected_model,
             commands::set_selected_model,
             commands::store_artifact,

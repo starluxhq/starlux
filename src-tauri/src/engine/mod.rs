@@ -34,6 +34,31 @@ pub struct Usage {
     pub cost_usd: Option<f64>,
 }
 
+/// The provider's view of the user's subscription window — every session they
+/// have run, terminal included, not Starlux's share of it. It arrives as a
+/// byproduct of a run, so before the first question of a launch the only honest
+/// thing to show is the last one seen and how old it is.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RateLimit {
+    pub provider_id: String,
+    /// The provider's own name for the window (`five_hour`, `weekly`, ...),
+    /// passed through rather than mapped onto an enum, so a kind we have never
+    /// seen still reaches the UI instead of failing the parse.
+    pub kind: String,
+    pub status: String,
+    pub resets_at: Option<i64>,
+    pub using_overage: bool,
+    /// When Starlux saw this, not when the provider computed it.
+    pub observed_at: i64,
+}
+
+pub fn now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs() as i64)
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(
     tag = "kind",
@@ -66,6 +91,10 @@ pub enum StreamEvent {
         run_id: String,
         message: String,
         stderr_tail: String,
+    },
+    RateLimit {
+        run_id: String,
+        limit: RateLimit,
     },
 }
 

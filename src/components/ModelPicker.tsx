@@ -1,5 +1,6 @@
 import { modelLabel, PICKER } from "../lib/models";
-import type { Provider } from "../lib/types";
+import { resetLabel, shortAge, windowLabel } from "../lib/time";
+import type { Provider, RateLimit } from "../lib/types";
 import SpectralDot from "./SpectralDot";
 
 interface TriggerProps {
@@ -24,17 +25,55 @@ export function ModelTrigger({ providerId, model, open, onToggle }: TriggerProps
   );
 }
 
+/** Older than this and the window is reported with its age: what it says about
+ *  the reset time stays true, but whether the user is still inside it may not. */
+const STALE_AFTER = 10 * 60_000;
+
+/** The subscription window, which spans every session the user has run rather
+ *  than this app's share, so it is deliberately not phrased as Starlux's usage.
+ *  There is no percentage to show: the provider reports which window and when it
+ *  resets, and inventing a number from our own token counts would be a guess. */
+function SubscriptionWindow({ limit }: { limit: RateLimit }) {
+  const resets = limit.resetsAt === null ? null : resetLabel(limit.resetsAt);
+  // Past its reset, the window has already rolled over and we know nothing
+  // about the one that replaced it.
+  if (!resets) return null;
+
+  const limited = limit.status !== "allowed";
+  const stale = Date.now() - limit.observedAt * 1000 > STALE_AFTER;
+
+  return (
+    <p
+      className={`px-3 pt-1 pb-2 font-mono text-[10px] ${limited ? "text-class-m" : "text-faint"}`}
+      title={`Your ${windowLabel(limit.kind)} limit across every Claude session, not Starlux's alone`}
+    >
+      {limited ? `${limit.status.replace(/_/g, " ")} · ` : ""}
+      {windowLabel(limit.kind)} resets {resets}
+      {limit.usingOverage ? " · overage" : ""}
+      {stale ? ` · ${shortAge(limit.observedAt * 1000)} ago` : ""}
+    </p>
+  );
+}
+
 interface MenuProps {
   providers: Provider[];
   providerId: string;
   model: string;
+  limits: Record<string, RateLimit>;
   onSelect: (providerId: string, model: string) => void;
   className?: string;
 }
 
 /** Positioned by its window: the Workspace floats it over the thread, the Quick
  *  Bar puts it in transparent space the window grows for. */
-export function ModelMenu({ providers, providerId, model, onSelect, className = "" }: MenuProps) {
+export function ModelMenu({
+  providers,
+  providerId,
+  model,
+  limits,
+  onSelect,
+  className = "",
+}: MenuProps) {
   return (
     <div {...{ [PICKER]: "" }} className={className}>
       <div className="ml-auto max-h-56 w-52 overflow-y-auto rounded-lg border border-rule bg-haze shadow-xl shadow-black/40">
@@ -59,6 +98,7 @@ export function ModelMenu({ providers, providerId, model, onSelect, className = 
                 </button>
               );
             })}
+            {limits[provider.id] ? <SubscriptionWindow limit={limits[provider.id]} /> : null}
           </div>
         ))}
       </div>
