@@ -28,7 +28,7 @@ pub struct Provider {
 
 const CATALOG: &[(&str, &str, &str, &[&str])] = &[(
     "claude-cli",
-    "Claude (subscription)",
+    "Claude Code",
     "claude",
     &["opus", "sonnet", "haiku"],
 )];
