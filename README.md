@@ -58,8 +58,8 @@ it is asked.
 Requires [Rust](https://rustup.rs) (stable) and Node 20+.
 
 ```sh
-npm install
-npm run tauri dev
+pnpm install
+pnpm tauri dev
 ```
 
 ### Platform prerequisites

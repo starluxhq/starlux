@@ -9,8 +9,8 @@ See [Building from source](README.md#building-from-source) for toolchain and
 per-platform prerequisites, then:
 
 ```sh
-npm install
-npm run tauri dev
+pnpm install
+pnpm tauri dev
 ```
 
 ## Branches
@@ -56,8 +56,8 @@ That points git at `.githooks/`, whose `pre-push` hook runs the same checks CI
 does. To run them by hand:
 
 ```sh
-npm run check                          # typecheck, build, fmt, clippy, tests
-npx react-doctor@latest --scope changed
+pnpm check                             # typecheck, build, fmt, clippy, tests
+pnpm dlx react-doctor@latest --scope changed
 ```
 
 CI runs a build matrix across Linux, macOS, and Windows, plus React Doctor on

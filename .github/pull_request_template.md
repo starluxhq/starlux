@@ -14,7 +14,7 @@
 
 ## Checks
 
-- [ ] `npx tsc --noEmit`
+- [ ] `pnpm typecheck`
 - [ ] `cargo clippy --all-targets -- -D warnings`
 - [ ] `cargo fmt --check`
 - [ ] `cargo test`
