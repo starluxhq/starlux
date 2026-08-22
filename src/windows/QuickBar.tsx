@@ -4,9 +4,10 @@ import AgentMode from "../components/AgentMode";
 import Answer from "../components/Answer";
 import Attachments, { type Attachment } from "../components/Attachments";
 import Composer from "../components/Composer";
-import { ModelMenu, ModelTrigger, PICKER } from "../components/ModelPicker";
+import { ModelMenu, ModelTrigger } from "../components/ModelPicker";
 import Rail from "../components/Rail";
 import { onAsk, onStream } from "../lib/events";
+import { PICKER } from "../lib/models";
 import {
   hideQuickBar,
   openWorkspace,
