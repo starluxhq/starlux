@@ -1,5 +1,11 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import AgentMode from "../components/AgentMode";
 import Answer from "../components/Answer";
 import Attachments, { type Attachment } from "../components/Attachments";
@@ -64,12 +70,15 @@ export default function QuickBar() {
   // of being clipped by the window edge.
   const asked = useRef(0);
   const fit = useCallback(() => {
-    const height = hasThread ? THREAD_HEIGHT : Math.ceil(shell.current?.getBoundingClientRect().height ?? 0);
+    // Always the wrapper, never the constant: the panel carries its own fixed
+    // height once there is a thread, so this still picks up the room an open
+    // model list needs below it.
+    const height = Math.ceil(shell.current?.getBoundingClientRect().height ?? 0);
     if (height > 0 && height !== asked.current) {
       asked.current = height;
       void setQuickbarHeight(height);
     }
-  }, [hasThread]);
+  }, []);
 
   // Every render, because the things that change the bar's height — a file
   // added, the model list opened, the composer growing a line — are all state
@@ -86,7 +95,8 @@ export default function QuickBar() {
   useEffect(() => {
     if (!picking) return;
     const dismiss = (event: MouseEvent) => {
-      if (!(event.target as HTMLElement).closest(`[${PICKER}]`)) setPicking(false);
+      if (!(event.target as HTMLElement).closest(`[${PICKER}]`))
+        setPicking(false);
     };
     // Capture: the composer holds focus and stops the bubble phase.
     document.addEventListener("mousedown", dismiss, true);
@@ -149,33 +159,94 @@ export default function QuickBar() {
   }, []);
 
   return (
-    <div
-      ref={shell}
-      // Content-height while it is only a bar, so the window can be measured
-      // from it; full-height once the window is fixed, so no transparent strip
-      // is left over the desktop still catching clicks. Deliberately not capped
-      // to the viewport: that would clamp the shell to a window sized from the
-      // shell, and the bar could shrink but never grow back.
-      className={`surface flex flex-col overflow-hidden rounded-[14px] border border-white/8 ${
-        hasThread ? "h-full" : "h-fit"
-      }`}
-    >
-      {hasThread ? (
-        <div
-          ref={scroller}
-          className="flex min-h-0 flex-1 gap-3 overflow-y-auto border-b border-white/6 px-4 py-4"
-        >
-          <Rail status={status} className="mb-1" />
-          <div className="min-w-0 flex-1 space-y-5">
-            {answers.map((turn) => (
-              <Answer key={turn.id} turn={turn} />
-            ))}
+    // The window is measured from this wrapper, which is transparent. Only the
+    // panel inside it is the bar, so an open model list grows the window without
+    // the bar moving or changing size — the list reads as floating outside the
+    // app, which is the one thing a single window cannot actually do.
+    <div ref={shell} className="flex h-fit flex-col">
+      <div
+        className="surface flex flex-col overflow-hidden rounded-[14px] border border-white/8"
+        style={hasThread ? { height: THREAD_HEIGHT } : undefined}
+      >
+        {hasThread ? (
+          <div
+            ref={scroller}
+            className="flex min-h-0 flex-1 gap-3 overflow-y-auto border-b border-white/6 px-4 py-4"
+          >
+            <Rail status={status} className="mb-1" />
+            <div className="min-w-0 flex-1 space-y-5">
+              {answers.map((turn) => (
+                <Answer key={turn.id} turn={turn} />
+              ))}
+            </div>
           </div>
+        ) : null}
+
+        <Attachments
+          className="px-3 pt-3"
+          items={files}
+          onRemove={(path) =>
+            setFiles((current) => current.filter((file) => file.path !== path))
+          }
+        />
+
+        <div className="flex shrink-0 items-center gap-2 px-3 py-2.5">
+          <button
+            type="button"
+            onClick={() => void attach()}
+            title="Attach files"
+            className="shrink-0 rounded-md px-1.5 text-[19px] leading-none text-faint hover:text-ink"
+          >
+            +
+          </button>
+
+          <Composer
+            value={draft}
+            placeholder={hasThread ? "Ask a follow-up" : "Ask anything"}
+            onChange={setDraft}
+            onSubmit={submit}
+            maxRows={4}
+            marker={false}
+          />
+
+          <AgentMode dir={agentDir} />
+
+          {available.length > 0 ? (
+            <ModelTrigger
+              providerId={providerId}
+              model={model}
+              open={picking}
+              onToggle={() => setPicking((was) => !was)}
+            />
+          ) : (
+            <span className="shrink-0 font-mono text-[10px] whitespace-nowrap text-class-m uppercase">
+              no provider
+            </span>
+          )}
+
+          <button
+            type="button"
+            onClick={() => void openWorkspace()}
+            title="Expand to the Workspace (⌘E)"
+            className="shrink-0 rounded-md px-1 py-1 text-muted hover:text-ink"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden className="size-3.5">
+              <path
+                d="M9.5 2h4.5v4.5M6.5 14H2V9.5M14 2l-5 5M2 14l5-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
         </div>
-      ) : null}
+      </div>
 
       {picking ? (
         <ModelMenu
+          className="px-3 pt-2"
           providers={available}
           providerId={providerId}
           model={model}
@@ -185,64 +256,6 @@ export default function QuickBar() {
           }}
         />
       ) : null}
-
-      <Attachments
-        items={files}
-        onRemove={(path) => setFiles((current) => current.filter((file) => file.path !== path))}
-      />
-
-      <div className="flex shrink-0 items-center gap-2 px-3 py-2.5">
-        <button
-          type="button"
-          onClick={() => void attach()}
-          title="Attach files"
-          className="shrink-0 rounded-md px-1.5 text-[19px] leading-none text-faint hover:text-ink"
-        >
-          +
-        </button>
-
-        <Composer
-          value={draft}
-          placeholder={hasThread ? "Ask a follow-up" : "Ask anything"}
-          onChange={setDraft}
-          onSubmit={submit}
-          maxRows={4}
-          marker={false}
-        />
-
-        <AgentMode dir={agentDir} />
-
-        {available.length > 0 ? (
-          <ModelTrigger
-            providerId={providerId}
-            model={model}
-            open={picking}
-            onToggle={() => setPicking((was) => !was)}
-          />
-        ) : (
-          <span className="shrink-0 font-mono text-[10px] whitespace-nowrap text-class-m uppercase">
-            no provider
-          </span>
-        )}
-
-        <button
-          type="button"
-          onClick={() => void openWorkspace()}
-          title="Expand to the Workspace (⌘E)"
-          className="shrink-0 rounded-md px-1 py-1 text-muted hover:text-ink"
-        >
-          <svg viewBox="0 0 16 16" aria-hidden className="size-3.5">
-            <path
-              d="M9.5 2h4.5v4.5M6.5 14H2V9.5M14 2l-5 5M2 14l5-5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-      </div>
     </div>
   );
 }
