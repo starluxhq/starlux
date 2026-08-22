@@ -6,15 +6,16 @@ export interface Attachment {
 interface AttachmentsProps {
   items: Attachment[];
   onRemove: (path: string) => void;
+  className?: string;
 }
 
 /** Above the input rather than inside it, so a second and third file wrap into
  *  the row instead of squeezing the question. */
-export default function Attachments({ items, onRemove }: AttachmentsProps) {
+export default function Attachments({ items, onRemove, className = "" }: AttachmentsProps) {
   if (items.length === 0) return null;
 
   return (
-    <ul className="flex flex-wrap gap-2 px-3 pt-3">
+    <ul className={`flex flex-wrap gap-2 ${className}`}>
       {items.map((item) => (
         <li key={item.path}>
           <button

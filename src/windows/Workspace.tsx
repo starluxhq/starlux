@@ -3,10 +3,12 @@ import { useEffect, useState } from "react";
 import AgentMode from "../components/AgentMode";
 import Answer from "../components/Answer";
 import ArtifactViewer from "../components/ArtifactViewer";
+import Attachments, { type Attachment } from "../components/Attachments";
 import Composer from "../components/Composer";
 import ConversationList from "../components/ConversationList";
-import ModelBadge from "../components/ModelBadge";
+import { ModelMenu, ModelTrigger } from "../components/ModelPicker";
 import Rail from "../components/Rail";
+import { PICKER } from "../lib/models";
 import { onConversationsChanged, onFocusConversation, onStream } from "../lib/events";
 import { activeConversation } from "../lib/ipc";
 import { useArtifact } from "../stores/useArtifact";
@@ -15,6 +17,8 @@ import { useConversations } from "../stores/useConversations";
 
 export default function Workspace() {
   const [draft, setDraft] = useState("");
+  const [files, setFiles] = useState<Attachment[]>([]);
+  const [picking, setPicking] = useState(false);
   const {
     providers,
     providerId,
@@ -26,6 +30,7 @@ export default function Workspace() {
     loadProviders,
     openConversation,
     newConversation,
+    selectModel,
     setAgentDir,
     send,
     stop,
@@ -52,10 +57,20 @@ export default function Workspace() {
   );
 
   useEffect(() => {
+    if (!picking) return;
+    const dismiss = (event: MouseEvent) => {
+      if (!(event.target as HTMLElement).closest(`[${PICKER}]`)) setPicking(false);
+    };
+    document.addEventListener("mousedown", dismiss, true);
+    return () => document.removeEventListener("mousedown", dismiss, true);
+  }, [picking]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const accel = event.metaKey || event.ctrlKey;
       // An open artifact is the nearest thing to dismiss, so it goes first.
-      if (event.key === "Escape" && expanded) collapse();
+      if (event.key === "Escape" && picking) setPicking(false);
+      else if (event.key === "Escape" && expanded) collapse();
       else if (event.key === "Escape" && status === "streaming") void stop();
       if (accel && event.key.toLowerCase() === "n") {
         event.preventDefault();
@@ -65,13 +80,28 @@ export default function Workspace() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [status, stop, newConversation, expanded, collapse]);
+  }, [status, stop, newConversation, expanded, collapse, picking]);
 
-  const provider = providers.find((candidate) => candidate.id === providerId);
+  const available = providers.filter((candidate) => candidate.available);
 
   const submit = () => {
     void send(draft);
     setDraft("");
+    setFiles([]);
+  };
+
+  const attach = async () => {
+    const picked = await open({ multiple: true, title: "Attach files" });
+    const paths = Array.isArray(picked) ? picked : picked ? [picked] : [];
+    setFiles((current) => {
+      const merged = [...current];
+      for (const path of paths) {
+        if (!merged.some((file) => file.path === path)) {
+          merged.push({ path, name: path.split(/[\\/]/).pop() ?? path });
+        }
+      }
+      return merged;
+    });
   };
 
   const pickFolder = async () => {
@@ -115,10 +145,7 @@ export default function Workspace() {
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-white/6 px-6 py-3">
-          {provider ? (
-            <ModelBadge providerId={providerId} name={provider.name} model={model} />
-          ) : null}
+        <header className="flex items-center justify-end border-b border-white/6 px-6 py-3">
           <AgentMode
             dir={agentDir}
             onPick={() => void pickFolder()}
@@ -150,14 +177,58 @@ export default function Workspace() {
           )}
         </div>
 
-        <div className="shrink-0 border-t border-white/6 px-6 py-4">
-          <Composer
-            value={draft}
-            placeholder={turns.length > 0 ? "Ask a follow-up" : "Ask anything"}
-            onChange={setDraft}
-            onSubmit={submit}
-            maxRows={8}
+        <div className="relative shrink-0 border-t border-white/6 px-6 py-4">
+          {picking ? (
+            <ModelMenu
+              className="absolute right-6 bottom-full mb-2"
+              providers={available}
+              providerId={providerId}
+              model={model}
+              onSelect={(nextProvider, nextModel) => {
+                selectModel(nextProvider, nextModel);
+                setPicking(false);
+              }}
+            />
+          ) : null}
+
+          <Attachments
+            className="pb-3"
+            items={files}
+            onRemove={(path) => setFiles((current) => current.filter((file) => file.path !== path))}
           />
+
+          <div className="flex items-end gap-3">
+            <button
+              type="button"
+              onClick={() => void attach()}
+              title="Attach files"
+              className="shrink-0 rounded-md px-1 pb-1 text-[19px] leading-none text-faint hover:text-ink"
+            >
+              +
+            </button>
+
+            <Composer
+              value={draft}
+              placeholder={turns.length > 0 ? "Ask a follow-up" : "Ask anything"}
+              onChange={setDraft}
+              onSubmit={submit}
+              maxRows={8}
+              marker={false}
+            />
+
+            {available.length > 0 ? (
+              <ModelTrigger
+                providerId={providerId}
+                model={model}
+                open={picking}
+                onToggle={() => setPicking((was) => !was)}
+              />
+            ) : (
+              <span className="shrink-0 font-mono text-[10px] whitespace-nowrap text-class-m uppercase">
+                no provider
+              </span>
+            )}
+          </div>
         </div>
       </main>
 

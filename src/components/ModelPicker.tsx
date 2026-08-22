@@ -29,14 +29,15 @@ interface MenuProps {
   providerId: string;
   model: string | null;
   onSelect: (providerId: string, model: string | null) => void;
+  className?: string;
 }
 
-/** Sits in the bar's flow rather than floating over it: the window is only as
- *  tall as its content, so an overlay would be clipped by the window edge. */
-export function ModelMenu({ providers, providerId, model, onSelect }: MenuProps) {
+/** Positioned by its window: the Workspace floats it over the thread, the Quick
+ *  Bar puts it in transparent space the window grows for. */
+export function ModelMenu({ providers, providerId, model, onSelect, className = "" }: MenuProps) {
   return (
-    <div {...{ [PICKER]: "" }} className="max-h-56 overflow-y-auto px-3 pt-2">
-      <div className="ml-auto w-52 overflow-hidden rounded-lg border border-rule bg-haze">
+    <div {...{ [PICKER]: "" }} className={className}>
+      <div className="ml-auto max-h-56 w-52 overflow-y-auto rounded-lg border border-rule bg-haze shadow-xl shadow-black/40">
         {providers.map((provider) => (
           <div key={provider.id}>
             <p className="border-b border-rule/60 px-3 py-1.5 font-mono text-[10px] tracking-wide text-faint uppercase">

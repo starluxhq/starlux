@@ -22,11 +22,12 @@ const FOCUS_EVENT: &str = "starlux://focus";
 
 const BAR_WIDTH: f64 = 680.0;
 /// The bar asks for its own height, so a row of attachments or an open model
-/// list grows the window instead of being clipped by it. Bounded here rather
-/// than trusted, and only ever two-ish sizes — a window that resized per token
-/// is what crashes WebKitGTK.
+/// list grows the window instead of being clipped by it. The extra room the
+/// list needs is transparent, which is what lets it read as floating outside
+/// the bar. Bounded here rather than trusted, and only ever a few sizes on
+/// discrete events — a window that resized per token is what crashes WebKitGTK.
 const BAR_MIN_HEIGHT: f64 = 44.0;
-const BAR_MAX_HEIGHT: f64 = 480.0;
+const BAR_MAX_HEIGHT: f64 = 720.0;
 
 fn window(app: &AppHandle, label: &str) -> tauri::Result<WebviewWindow> {
     app.get_webview_window(label)
