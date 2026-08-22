@@ -3,10 +3,11 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 use crate::windows;
 
-#[cfg(target_os = "macos")]
+/// The same key on every platform, because the alternative is taken on all of
+/// them: Meta+Space is Spotlight on macOS and the layout switcher on Windows and
+/// most Linux desktops. Alt+Space is what PowerToys Run uses, and the window menu
+/// it displaces there is reachable from the title bar anyway.
 const DEFAULT: &str = "Alt+Space";
-#[cfg(not(target_os = "macos"))]
-const DEFAULT: &str = "Super+Space";
 
 /// Registration failing is the normal case on Wayland and whenever another app
 /// already holds the key, so every path here logs and returns rather than

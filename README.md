@@ -81,9 +81,12 @@ and the WebView2 runtime (preinstalled on Windows 11).
 
 ### The global hotkey
 
-Starlux registers **⌥Space** on macOS and **Super+Space** everywhere else. Set
+Starlux registers **Alt+Space** — ⌥Space on macOS — on every platform. Set
 `STARLUX_HOTKEY` to any accelerator (`Ctrl+Alt+Space`) to change it, or to `none`
 to turn registration off.
+
+Meta+Space is deliberately not the default: it is Spotlight on macOS and the
+keyboard-layout switcher on Windows and most Linux desktops.
 
 Registration is allowed to fail. If the key is already taken — or you are on
 Wayland, which does not let applications grab keys at all — Starlux logs why and
@@ -98,15 +101,14 @@ starlux --toggle
 On KDE, `scripts/install-kde-shortcut.sh` writes that binding for you:
 
 ```sh
-./scripts/install-kde-shortcut.sh                  # Meta+Space
-STARLUX_SHORTCUT="Alt+Space" ./scripts/install-kde-shortcut.sh
+./scripts/install-kde-shortcut.sh                     # Alt+Space
+STARLUX_SHORTCUT="Ctrl+Alt+Space" ./scripts/install-kde-shortcut.sh
 ```
 
 The key works straight away — the script registers it with the running shortcut
 daemon as well as writing the config, since the daemon only re-reads that file at
 login. It does not check whether the key is already in use, though: if nothing
 happens, look for the conflict in System Settings and rerun with a different one.
-Meta+Space is a common launcher binding.
 
 `starlux --toggle` works whether or not Starlux is running: a second launch hands
 its arguments to the first and exits. `--workspace` and `--ask "<question>"` do

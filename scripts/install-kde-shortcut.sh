@@ -12,7 +12,7 @@ set -e
 
 ID=net.local.starlux.desktop
 NAME="Toggle Starlux"
-KEY=${STARLUX_SHORTCUT:-Meta+Space}
+KEY=${STARLUX_SHORTCUT:-Alt+Space}
 
 die() {
 	echo "install-kde-shortcut: $1" >&2
