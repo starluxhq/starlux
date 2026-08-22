@@ -53,6 +53,42 @@ CLI settings refuse is still refused. The grant is stored with the conversation
 rather than the window, so leaving agent mode takes effect on the next turn wherever
 it is asked.
 
+[SECURITY.md](SECURITY.md) has the rest: the artifact sandbox, the content
+policies, and what to do if you find a hole in any of it.
+
+## Accounts and credentials
+
+Starlux does not have an account, and it does not want yours.
+
+Each provider is the vendor's own CLI, unmodified, run exactly as you would run
+it in a terminal: `claude` is spawned as an argv array with your prompt on
+stdin, never as a shell string. It authenticates the way it already does on your
+machine, holds its own credential, and Starlux never reads, stores, forwards, or
+proxies it — there is no key in the app, nothing in the webview, and no request
+of ours that reaches a provider's servers.
+
+That shape is deliberate rather than incidental. Some CLIs keep a bearer token
+in a plain file, and lifting one to make requests ourselves would make Starlux a
+credential scraper for a feature it does not need: spawning the binary gets the
+same answer and leaves the secret where its owner put it.
+
+Three things follow, and Starlux holds to all three:
+
+- **The binary is never modified**, and never invoked in a way that disables an
+  authentication method built into it. `claude --bare` is specifically not used
+  — it forces `ANTHROPIC_API_KEY` and would bypass the subscription this bridge
+  exists to use — and a test asserts the flag can never appear in the arguments.
+- **Nothing is intermediated or resold.** One person's launcher runs on one
+  person's machine against one person's account. Starlux is not a service, does
+  not sit between you and a provider, and has no server of its own.
+- **Provider names identify what is being run**, not what Starlux is. The model
+  picker lists `Claude Code` because that is the binary it spawns.
+
+Anthropic's terms for this are at
+[code.claude.com/docs/en/legal-and-compliance](https://code.claude.com/docs/en/legal-and-compliance);
+each vendor's own terms govern your use of their CLI, and using your
+subscription through Starlux is between you and them. Check them.
+
 ## Building from source
 
 Requires [Rust](https://rustup.rs) (stable) and Node 20+.
@@ -128,6 +164,8 @@ with `STARLUX_SAFE_GRAPHICS=1` to disable WebKit's DMABUF renderer. See
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Issues and PRs welcome.
+Found something exploitable? [SECURITY.md](SECURITY.md) has the private
+reporting channel — please use it rather than an issue.
 
 ## License
 
