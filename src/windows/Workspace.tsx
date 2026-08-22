@@ -7,6 +7,7 @@ import Attachments, { type Attachment } from "../components/Attachments";
 import Composer from "../components/Composer";
 import ConversationList from "../components/ConversationList";
 import { ModelMenu, ModelTrigger } from "../components/ModelPicker";
+import ProviderHint from "../components/ProviderHint";
 import Rail from "../components/Rail";
 import { PICKER } from "../lib/models";
 import { onConversationsChanged, onFocusConversation, onStream } from "../lib/events";
@@ -83,7 +84,6 @@ export default function Workspace() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [status, stop, newConversation, expanded, collapse, picking]);
 
-  const available = providers.filter((candidate) => candidate.available);
 
   const submit = () => {
     void send(draft);
@@ -182,7 +182,7 @@ export default function Workspace() {
           {picking && model ? (
             <ModelMenu
               className="absolute right-6 bottom-full mb-2"
-              providers={available}
+              providers={providers}
               providerId={providerId}
               model={model}
               limits={limits}
@@ -226,9 +226,7 @@ export default function Workspace() {
                 onToggle={() => setPicking((was) => !was)}
               />
             ) : (
-              <span className="shrink-0 font-mono text-[10px] whitespace-nowrap text-class-m uppercase">
-                no provider
-              </span>
+              <ProviderHint providers={providers} />
             )}
           </div>
         </div>

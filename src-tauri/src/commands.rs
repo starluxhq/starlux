@@ -38,9 +38,13 @@ pub fn set_blur_hide_suppressed(state: tauri::State<'_, AppState>, suppressed: b
     state.set_blur_hide_suppressed(suppressed);
 }
 
+/// Probing asks each installed binary whether anyone is signed in to it, which
+/// is a subprocess and so cannot run on the thread answering IPC.
 #[tauri::command]
-pub fn list_providers() -> Vec<Provider> {
-    providers::detect()
+pub async fn list_providers() -> Result<Vec<Provider>, String> {
+    tauri::async_runtime::spawn_blocking(providers::detect)
+        .await
+        .map_err(|err| err.to_string())
 }
 
 /// What the providers last said about the user's subscription windows. Read at

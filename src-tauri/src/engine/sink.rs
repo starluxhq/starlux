@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter};
 
-use super::StreamEvent;
+use super::{providers, StreamEvent};
 use crate::db::{self, Message};
 use crate::windows::{QUICKBAR, WORKSPACE};
 
@@ -88,14 +88,19 @@ impl Sink {
             }
             StreamEvent::Error {
                 run_id, message, ..
-            } => self.persist_answer(Message {
-                id: run_id.clone(),
-                role: "assistant".to_owned(),
-                text: String::new(),
-                model: self.model.lock().unwrap().clone(),
-                usage: None,
-                error: Some(message.clone()),
-            }),
+            } => {
+                // Whatever went wrong, who is signed in is one of the things it
+                // could have been, and the answer is now a probe old.
+                providers::invalidate();
+                self.persist_answer(Message {
+                    id: run_id.clone(),
+                    role: "assistant".to_owned(),
+                    text: String::new(),
+                    model: self.model.lock().unwrap().clone(),
+                    usage: None,
+                    error: Some(message.clone()),
+                })
+            }
             _ => {}
         }
     }
