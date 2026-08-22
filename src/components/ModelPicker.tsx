@@ -4,7 +4,7 @@ import SpectralDot from "./SpectralDot";
 
 interface TriggerProps {
   providerId: string;
-  model: string | null;
+  model: string;
   open: boolean;
   onToggle: () => void;
 }
@@ -27,8 +27,8 @@ export function ModelTrigger({ providerId, model, open, onToggle }: TriggerProps
 interface MenuProps {
   providers: Provider[];
   providerId: string;
-  model: string | null;
-  onSelect: (providerId: string, model: string | null) => void;
+  model: string;
+  onSelect: (providerId: string, model: string) => void;
   className?: string;
 }
 
@@ -43,11 +43,11 @@ export function ModelMenu({ providers, providerId, model, onSelect, className = 
             <p className="border-b border-rule/60 px-3 py-1.5 font-mono text-[10px] tracking-wide text-faint uppercase">
               {provider.name}
             </p>
-            {[null, ...provider.models].map((option) => {
+            {provider.models.map((option) => {
               const current = provider.id === providerId && option === model;
               return (
                 <button
-                  key={option ?? "default"}
+                  key={option}
                   type="button"
                   onClick={() => onSelect(provider.id, option)}
                   className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] hover:bg-white/6 ${

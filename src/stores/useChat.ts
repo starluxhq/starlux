@@ -4,6 +4,8 @@ import {
   listProviders,
   loadConversation,
   runPrompt,
+  saveSelectedModel,
+  selectedModel,
   setAgentDir as saveAgentDir,
 } from "../lib/ipc";
 import type { Message, Provider, StreamEvent, Usage } from "../lib/types";
@@ -31,7 +33,7 @@ interface ChatState {
   status: Status;
   runId: string | null;
   loadProviders: () => Promise<void>;
-  selectModel: (providerId: string, model: string | null) => void;
+  selectModel: (providerId: string, model: string) => void;
   setAgentDir: (dir: string | null) => Promise<void>;
   apply: (event: StreamEvent) => void;
   openConversation: (id: string) => Promise<void>;
@@ -94,14 +96,32 @@ export const useChat = create<ChatState>((set, get) => ({
   status: "idle",
   runId: null,
 
+  // The model outlives the conversation: whatever was asked for last is what
+  // the next question asks for, on this launch or the next one. A saved choice
+  // whose provider or model has since gone is dropped rather than sent.
   loadProviders: async () => {
-    const providers = await listProviders();
-    set({ providers });
+    const [providers, saved] = await Promise.all([listProviders(), selectedModel()]);
+    const usable = providers.filter((provider) => provider.available);
+    const chosen =
+      usable.find(
+        (provider) => provider.id === saved?.providerId && provider.models.includes(saved.model),
+      ) ?? usable[0];
+
+    set({
+      providers,
+      ...(chosen && {
+        providerId: chosen.id,
+        model: chosen.models.includes(saved?.model ?? "") ? saved!.model : chosen.models[0],
+      }),
+    });
   },
 
   // Provider and model move together: the list spans every provider, so
   // picking one that belongs to another is also a switch of provider.
-  selectModel: (providerId, model) => set({ providerId, model }),
+  selectModel: (providerId, model) => {
+    set({ providerId, model });
+    void saveSelectedModel(providerId, model);
+  },
 
   // Stored against the conversation, not the window, so the folder a run may
   // touch is the one the user granted rather than the one this window last saw.
@@ -154,10 +174,16 @@ export const useChat = create<ChatState>((set, get) => ({
         case "meta":
           // The provider's own session id is what makes the next turn a
           // continuation rather than a fresh one-shot.
+          //
+          // What ran is recorded on the turn, never back onto the selection:
+          // the provider answers with an exact build (`claude-opus-5`) and the
+          // picker offers aliases (`opus`), so writing one over the other
+          // leaves the list with nothing selected.
           return {
             sessionId: event.sessionId ?? state.sessionId,
-            model: event.model ?? state.model,
-            turns: event.model ? patch(state.turns, event.runId, { model: event.model }) : state.turns,
+            turns: event.model
+              ? patch(state.turns, event.runId, { model: event.model })
+              : state.turns,
           };
         case "end":
           return {
@@ -199,7 +225,6 @@ export const useChat = create<ChatState>((set, get) => ({
         providerId: thread.conversation.providerId,
         sessionId: thread.conversation.sessionId,
         agentDir: thread.conversation.agentDir,
-        model: thread.conversation.model ?? state.model,
         turns,
       };
     });
