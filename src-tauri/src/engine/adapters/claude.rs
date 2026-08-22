@@ -4,6 +4,9 @@ use crate::engine::{
     system_prompt, CliAdapter, Invocation, ParseState, RunRequest, StreamEvent, Usage,
 };
 
+/// Namespaced so a user's own agent of the same name is never the one that runs.
+const CHAT_AGENT: &str = "starlux-chat";
+
 pub struct ClaudeAdapter;
 
 impl CliAdapter for ClaudeAdapter {
@@ -30,14 +33,22 @@ impl CliAdapter for ClaudeAdapter {
         // deliberately not used: it forces ANTHROPIC_API_KEY auth, which would
         // bypass the subscription this bridge exists to use.
         //
-        // Chat-only also replaces the provider's prompt rather than adding to it,
-        // dropping a coding-agent preamble that costs around 25k input tokens a
-        // turn. Agent mode still needs that preamble, so it appends instead.
+        // A session-scoped agent is what takes the tools away. `--allowed-tools ""`
+        // reads as "nothing further is pre-approved" rather than "no tools", and a
+        // denylist only covers the tools that existed when it was written — asked to
+        // read a file with Read, Bash and Glob denied, the CLI reached it through
+        // another tool. An agent declaring no tools has none to reach for, and MCP
+        // servers are excluded because they are tools the user configured elsewhere.
+        //
+        // Its prompt also replaces the provider's, dropping a coding-agent preamble
+        // that costs around 25k input tokens a turn. Agent mode still needs that
+        // preamble, so it appends instead.
         if req.agent_dir.is_none() {
-            args.push("--allowed-tools".into());
-            args.push(String::new());
-            args.push("--system-prompt".into());
-            args.push(system_prompt::chat());
+            args.push("--strict-mcp-config".into());
+            args.push("--agents".into());
+            args.push(chat_agent());
+            args.push("--agent".into());
+            args.push(CHAT_AGENT.into());
         } else {
             args.push("--append-system-prompt".into());
             args.push(system_prompt::agent());
@@ -138,6 +149,17 @@ impl CliAdapter for ClaudeAdapter {
 
         events
     }
+}
+
+fn chat_agent() -> String {
+    serde_json::json!({
+        CHAT_AGENT: {
+            "description": "Answers questions from the Starlux bar",
+            "prompt": system_prompt::chat(),
+            "tools": [],
+        }
+    })
+    .to_string()
 }
 
 fn text_delta(value: &Value) -> Option<&str> {
@@ -318,32 +340,39 @@ mod tests {
     }
 
     #[test]
-    fn chat_only_disables_tools_and_inherits_no_directory() {
+    fn chat_only_hands_the_run_no_tools_at_all() {
         let invocation = ClaudeAdapter.invocation(&request());
         assert_eq!(invocation.program, "claude");
         assert_eq!(invocation.stdin.as_deref(), Some("count to 3"));
         assert_eq!(invocation.cwd, None);
-
-        let tools = invocation
-            .args
-            .iter()
-            .position(|arg| arg == "--allowed-tools")
-            .expect("chat-only runs must disable tools");
-        assert_eq!(invocation.args[tools + 1], "");
         assert!(!invocation.args.iter().any(|arg| arg == "--bare"));
-    }
 
-    #[test]
-    fn chat_only_replaces_the_provider_prompt() {
-        let invocation = ClaudeAdapter.invocation(&request());
-
-        let prompt = invocation
+        let definition = invocation
             .args
             .iter()
-            .position(|arg| arg == "--system-prompt")
-            .expect("chat-only must replace the coding-agent preamble");
-        assert!(invocation.args[prompt + 1].starts_with("You are Starlux"));
-        // Appending would keep the preamble the replacement exists to drop.
+            .position(|arg| arg == "--agents")
+            .expect("chat-only runs must define the agent they run as");
+        let agents: Value = serde_json::from_str(&invocation.args[definition + 1]).unwrap();
+        let agent = &agents[CHAT_AGENT];
+        assert_eq!(agent["tools"], serde_json::json!([]));
+        assert!(agent["prompt"]
+            .as_str()
+            .unwrap()
+            .starts_with("You are Starlux"));
+
+        let selected = invocation
+            .args
+            .iter()
+            .position(|arg| arg == "--agent")
+            .expect("defining the agent does not select it");
+        assert_eq!(invocation.args[selected + 1], CHAT_AGENT);
+
+        // Servers configured elsewhere would arrive as tools the agent never declared.
+        assert!(invocation
+            .args
+            .iter()
+            .any(|arg| arg == "--strict-mcp-config"));
+        // Appending would keep the preamble the agent's own prompt exists to drop.
         assert!(!invocation
             .args
             .iter()
