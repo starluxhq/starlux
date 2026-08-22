@@ -365,7 +365,7 @@ where
         Ok(()) => {
             let _ = app.emit(CHANGED_EVENT, ());
         }
-        Err(err) => eprintln!("starlux: database write failed: {err}"),
+        Err(err) => log::error!("database write failed: {err}"),
     });
 }
 
