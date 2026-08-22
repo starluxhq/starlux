@@ -1,9 +1,0 @@
-{
-  "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "workspace",
-  "description": "Folder picking, which only the Workspace offers",
-  "windows": ["workspace"],
-  "permissions": [
-    "dialog:allow-open"
-  ]
-}

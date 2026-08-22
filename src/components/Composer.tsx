@@ -6,6 +6,8 @@ interface ComposerProps {
   onChange: (value: string) => void;
   onSubmit: () => void;
   maxRows?: number;
+  /** Off in the Quick Bar, where the attach button already marks the left edge. */
+  marker?: boolean;
 }
 
 const LINE_HEIGHT = 22;
@@ -16,6 +18,7 @@ export default function Composer({
   onChange,
   onSubmit,
   maxRows = 5,
+  marker = true,
 }: ComposerProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -43,10 +46,12 @@ export default function Composer({
   }, [fit]);
 
   return (
-    <div className="flex items-start gap-3">
-      <span aria-hidden className="pt-px font-mono text-[15px] leading-[22px] text-class-k">
-        ›
-      </span>
+    <div className="flex min-w-0 flex-1 items-start gap-3">
+      {marker ? (
+        <span aria-hidden className="pt-px font-mono text-[15px] leading-[22px] text-class-k">
+          ›
+        </span>
+      ) : null}
       <textarea
         ref={ref}
         rows={1}

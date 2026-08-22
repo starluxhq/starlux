@@ -31,7 +31,7 @@ interface ChatState {
   status: Status;
   runId: string | null;
   loadProviders: () => Promise<void>;
-  selectModel: (model: string | null) => void;
+  selectModel: (providerId: string, model: string | null) => void;
   setAgentDir: (dir: string | null) => Promise<void>;
   apply: (event: StreamEvent) => void;
   openConversation: (id: string) => Promise<void>;
@@ -99,7 +99,9 @@ export const useChat = create<ChatState>((set, get) => ({
     set({ providers });
   },
 
-  selectModel: (model) => set({ model }),
+  // Provider and model move together: the list spans every provider, so
+  // picking one that belongs to another is also a switch of provider.
+  selectModel: (providerId, model) => set({ providerId, model }),
 
   // Stored against the conversation, not the window, so the folder a run may
   // touch is the one the user granted rather than the one this window last saw.

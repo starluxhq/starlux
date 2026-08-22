@@ -64,6 +64,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::hide_quickbar,
             commands::toggle_quickbar,
+            commands::set_quickbar_height,
             commands::open_workspace,
             commands::set_blur_hide_suppressed,
             commands::list_providers,
