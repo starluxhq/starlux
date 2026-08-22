@@ -1,12 +1,6 @@
+import { modelLabel, PICKER } from "../lib/models";
 import type { Provider } from "../lib/types";
 import SpectralDot from "./SpectralDot";
-
-/** `opus` is what the CLI is given; `Opus` is what the bar shows. */
-export const modelLabel = (model: string | null) =>
-  model ? model.charAt(0).toUpperCase() + model.slice(1) : "Default";
-
-/** Marks both halves of the picker, so a click anywhere in it is not a dismissal. */
-export const PICKER = "data-model-picker";
 
 interface TriggerProps {
   providerId: string;
