@@ -1,4 +1,6 @@
+import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
+import AgentMode from "../components/AgentMode";
 import Answer from "../components/Answer";
 import ArtifactViewer from "../components/ArtifactViewer";
 import Composer from "../components/Composer";
@@ -20,9 +22,11 @@ export default function Workspace() {
     turns,
     status,
     conversationId,
+    agentDir,
     loadProviders,
     openConversation,
     newConversation,
+    setAgentDir,
     send,
     stop,
   } = useChat();
@@ -70,6 +74,14 @@ export default function Workspace() {
     setDraft("");
   };
 
+  const pickFolder = async () => {
+    const picked = await open({
+      directory: true,
+      title: "Choose a folder this conversation may work in",
+    });
+    if (typeof picked === "string") await setAgentDir(picked);
+  };
+
   return (
     <div className="flex h-full bg-void text-ink">
       <aside className="flex w-64 shrink-0 flex-col border-r border-white/6 bg-dust/60">
@@ -107,6 +119,11 @@ export default function Workspace() {
           {provider ? (
             <ModelBadge providerId={providerId} name={provider.name} model={model} />
           ) : null}
+          <AgentMode
+            dir={agentDir}
+            onPick={() => void pickFolder()}
+            onClear={() => void setAgentDir(null)}
+          />
         </header>
 
         <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-6">

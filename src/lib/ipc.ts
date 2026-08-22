@@ -13,6 +13,10 @@ export const listConversations = () => invoke<Conversation[]>("list_conversation
 export const loadConversation = (id: string) => invoke<Thread | null>("load_conversation", { id });
 export const deleteConversation = (id: string) => invoke<void>("delete_conversation", { id });
 
+/** `null` returns the conversation to chat-only. */
+export const setAgentDir = (id: string, dir: string | null) =>
+  invoke<void>("set_agent_dir", { id, dir });
+
 export const renameConversation = (id: string, title: string) =>
   invoke<void>("rename_conversation", { id, title });
 

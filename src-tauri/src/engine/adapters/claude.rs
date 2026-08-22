@@ -52,6 +52,11 @@ impl CliAdapter for ClaudeAdapter {
         } else {
             args.push("--append-system-prompt".into());
             args.push(system_prompt::agent());
+            // A launcher has nowhere to put an approval prompt, and a run with
+            // no way to answer one has every edit denied. Choosing the folder is
+            // the grant; whatever the user's own CLI settings refuse still is.
+            args.push("--permission-mode".into());
+            args.push("acceptEdits".into());
         }
 
         Invocation {
@@ -402,6 +407,20 @@ mod tests {
 
         assert_eq!(invocation.cwd, Some(PathBuf::from("/tmp/project")));
         assert!(!invocation.args.iter().any(|arg| arg == "--allowed-tools"));
+
+        let mode = invocation
+            .args
+            .iter()
+            .position(|arg| arg == "--permission-mode")
+            .expect("agent mode must accept edits it cannot ask about");
+        assert_eq!(invocation.args[mode + 1], "acceptEdits");
+    }
+
+    #[test]
+    fn chat_only_never_relaxes_permissions() {
+        let invocation = ClaudeAdapter.invocation(&request());
+        assert!(invocation.cwd.is_none());
+        assert!(!invocation.args.iter().any(|arg| arg == "--permission-mode"));
     }
 
     #[test]

@@ -1,5 +1,11 @@
 import { create } from "zustand";
-import { cancelRun, listProviders, loadConversation, runPrompt } from "../lib/ipc";
+import {
+  cancelRun,
+  listProviders,
+  loadConversation,
+  runPrompt,
+  setAgentDir as saveAgentDir,
+} from "../lib/ipc";
 import type { Message, Provider, StreamEvent, Usage } from "../lib/types";
 
 export type Status = "idle" | "streaming" | "error";
@@ -20,11 +26,13 @@ interface ChatState {
   model: string | null;
   conversationId: string | null;
   sessionId: string | null;
+  agentDir: string | null;
   turns: Turn[];
   status: Status;
   runId: string | null;
   loadProviders: () => Promise<void>;
   selectModel: (model: string | null) => void;
+  setAgentDir: (dir: string | null) => Promise<void>;
   apply: (event: StreamEvent) => void;
   openConversation: (id: string) => Promise<void>;
   newConversation: () => void;
@@ -81,6 +89,7 @@ export const useChat = create<ChatState>((set, get) => ({
   model: null,
   conversationId: null,
   sessionId: null,
+  agentDir: null,
   turns: [],
   status: "idle",
   runId: null,
@@ -92,8 +101,23 @@ export const useChat = create<ChatState>((set, get) => ({
 
   selectModel: (model) => set({ model }),
 
+  // Stored against the conversation, not the window, so the folder a run may
+  // touch is the one the user granted rather than the one this window last saw.
+  setAgentDir: async (dir) => {
+    const { conversationId } = get();
+    if (conversationId) await saveAgentDir(conversationId, dir);
+    set({ agentDir: dir });
+  },
+
   newConversation: () =>
-    set({ conversationId: null, sessionId: null, turns: [], status: "idle", runId: null }),
+    set({
+      conversationId: null,
+      sessionId: null,
+      agentDir: null,
+      turns: [],
+      status: "idle",
+      runId: null,
+    }),
 
   apply: (event) => {
     if (event.kind === "chunk") {
@@ -172,6 +196,7 @@ export const useChat = create<ChatState>((set, get) => ({
         conversationId: id,
         providerId: thread.conversation.providerId,
         sessionId: thread.conversation.sessionId,
+        agentDir: thread.conversation.agentDir,
         model: thread.conversation.model ?? state.model,
         turns,
       };
@@ -190,13 +215,13 @@ export const useChat = create<ChatState>((set, get) => ({
 
     const runId = crypto.randomUUID();
     const conversationId = get().conversationId ?? crypto.randomUUID();
-    const { providerId, model, sessionId, apply } = get();
+    const { providerId, model, sessionId, agentDir, apply } = get();
 
     apply({ kind: "start", runId, conversationId, providerId, prompt: trimmed });
 
     try {
       await runPrompt(
-        { runId, conversationId, providerId, prompt: trimmed, sessionId, model },
+        { runId, conversationId, providerId, prompt: trimmed, sessionId, model, agentDir },
         apply,
       );
     } catch (error) {
