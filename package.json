@@ -2,20 +2,21 @@
   "name": "starlux",
   "private": true,
   "version": "0.1.0",
-  "type": "module",
   "description": "A fast, keyboard-first AI launcher for macOS, Linux and Windows",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/starluxhq/starlux.git"
   },
+  "type": "module",
+  "packageManager": "pnpm@11.5.0",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run build && npm run check:rust",
+    "check": "pnpm typecheck && pnpm build && pnpm check:rust",
     "check:rust": "cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test"
   },
   "dependencies": {
