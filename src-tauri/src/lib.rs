@@ -3,6 +3,7 @@ mod commands;
 mod db;
 mod engine;
 mod platform;
+mod shell_env;
 mod shortcut;
 mod state;
 mod tray;
@@ -34,6 +35,9 @@ fn handle_argv(app: &tauri::AppHandle, argv: &[String]) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before anything resolves a binary: a packaged build has to widen its
+    // PATH before it can find one.
+    shell_env::import();
     platform::prepare_graphics();
 
     #[allow(unused_mut)]
