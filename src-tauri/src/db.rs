@@ -172,6 +172,29 @@ impl Db {
         Ok(())
     }
 
+    /// `None` returns the conversation to chat-only. The column is the only
+    /// record of the grant, so a run reads it back rather than trusting the
+    /// window that asked.
+    pub fn set_agent_dir(&self, id: &str, dir: Option<&str>) -> rusqlite::Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "UPDATE conversations SET agent_dir = ?2 WHERE id = ?1",
+            params![id, dir],
+        )?;
+        Ok(())
+    }
+
+    pub fn agent_dir(&self, id: &str) -> rusqlite::Result<Option<String>> {
+        let conn = self.0.lock().unwrap();
+        conn.query_row(
+            "SELECT agent_dir FROM conversations WHERE id = ?1",
+            params![id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map(Option::flatten)
+    }
+
     pub fn list_conversations(&self) -> rusqlite::Result<Vec<Conversation>> {
         let conn = self.0.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -447,6 +470,19 @@ mod tests {
         let thread = db.thread("c1").unwrap().unwrap();
         assert_eq!(thread.messages.len(), 1);
         assert_eq!(thread.messages[0].text, "final");
+    }
+
+    #[test]
+    fn a_conversation_is_pinned_to_a_folder_and_can_be_released() {
+        let db = db();
+        db.ensure_conversation("c1", "hi", "claude-cli", Some("/work"))
+            .unwrap();
+        assert_eq!(db.agent_dir("c1").unwrap().as_deref(), Some("/work"));
+        db.set_agent_dir("c1", Some("/elsewhere")).unwrap();
+        assert_eq!(db.agent_dir("c1").unwrap().as_deref(), Some("/elsewhere"));
+        db.set_agent_dir("c1", None).unwrap();
+        assert_eq!(db.agent_dir("c1").unwrap(), None);
+        assert_eq!(db.agent_dir("nobody").unwrap(), None);
     }
 
     #[test]

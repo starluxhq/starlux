@@ -46,7 +46,15 @@ pub async fn run(app: tauri::AppHandle, req: RunRequest, sink: Sink) -> Result<(
         .stderr(Stdio::piped())
         .kill_on_drop(true);
 
+    // A pinned folder can be renamed or unmounted between turns, and spawning
+    // into one that is gone reads as the binary being missing.
     if let Some(cwd) = &invocation.cwd {
+        if !cwd.is_dir() {
+            return Err(format!(
+                "`{}` is no longer a folder. Pick another one for this conversation.",
+                cwd.display()
+            ));
+        }
         command.current_dir(cwd);
     }
 

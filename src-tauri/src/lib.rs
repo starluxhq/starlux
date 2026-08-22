@@ -39,7 +39,8 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             handle_argv(app, &argv);
         }))
-        .plugin(tauri_plugin_opener::init());
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init());
 
     // Registers WebviewPanelManager; without it `to_panel()` panics at startup.
     #[cfg(target_os = "macos")]
@@ -69,6 +70,7 @@ pub fn run() {
             commands::load_conversation,
             commands::rename_conversation,
             commands::delete_conversation,
+            commands::set_agent_dir,
             commands::run_prompt,
             commands::cancel_run,
         ])

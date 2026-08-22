@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import AgentMode from "../components/AgentMode";
 import Answer from "../components/Answer";
 import Composer from "../components/Composer";
 import Keycap from "../components/Keycap";
@@ -10,8 +11,18 @@ import { applyMirrored, useChat } from "../stores/useChat";
 
 export default function QuickBar() {
   const [draft, setDraft] = useState("");
-  const { providers, providerId, model, turns, status, send, stop, loadProviders, newConversation } =
-    useChat();
+  const {
+    providers,
+    providerId,
+    model,
+    agentDir,
+    turns,
+    status,
+    send,
+    stop,
+    loadProviders,
+    newConversation,
+  } = useChat();
   const scroller = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -92,13 +103,16 @@ export default function QuickBar() {
         ) : null}
 
         <div className="flex items-center justify-between gap-4 border-t border-white/6 px-4 py-2.5">
-          {provider ? (
-            <ModelBadge providerId={providerId} name={provider.name} model={model} />
-          ) : (
-            <span className="font-mono text-[10px] tracking-wide text-class-m uppercase">
-              no provider found
-            </span>
-          )}
+          <span className="flex min-w-0 items-center gap-3">
+            {provider ? (
+              <ModelBadge providerId={providerId} name={provider.name} model={model} />
+            ) : (
+              <span className="font-mono text-[10px] tracking-wide text-class-m uppercase">
+                no provider found
+              </span>
+            )}
+            <AgentMode dir={agentDir} />
+          </span>
 
           <div className="flex items-center gap-3">
             {status === "streaming" ? (

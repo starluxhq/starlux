@@ -1,3 +1,5 @@
+use std::path::{Path, PathBuf};
+
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, Window};
 
@@ -74,11 +76,26 @@ pub async fn delete_conversation(app: AppHandle, id: String) -> Result<(), Strin
     Ok(())
 }
 
+/// Pins a conversation's runs to a folder, or with `None` returns it to
+/// chat-only. Writing it here rather than passing it with each run is what
+/// keeps a grant revoked in one window from being spent in the other.
+#[tauri::command]
+pub async fn set_agent_dir(app: AppHandle, id: String, dir: Option<String>) -> Result<(), String> {
+    if let Some(dir) = &dir {
+        if !Path::new(dir).is_dir() {
+            return Err(format!("`{dir}` is not a folder"));
+        }
+    }
+    db::query(&app, move |db| db.set_agent_dir(&id, dir.as_deref())).await?;
+    let _ = app.emit(db::CHANGED_EVENT, ());
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn run_prompt(
     app: AppHandle,
     window: Window,
-    request: RunRequest,
+    mut request: RunRequest,
     on_event: Channel<StreamEvent>,
 ) -> Result<(), String> {
     let conversation_id = request.conversation_id.clone();
@@ -99,13 +116,19 @@ pub async fn run_prompt(
 
     // Written before the process starts, so a run that dies still leaves the
     // question in history rather than a conversation that never happened.
+    //
+    // The stored folder comes back out because it, not the request, decides
+    // what this run may touch: an existing conversation keeps the grant it was
+    // given, and a new one records the one it arrived with.
     let id = conversation_id.clone();
-    db::query(&app, move |db| {
+    let granted = db::query(&app, move |db| {
         db.ensure_conversation(&id, &prompt, &provider_id, agent_dir.as_deref())?;
         db.set_setting(db::ACTIVE_CONVERSATION, Some(&id))?;
-        db.add_message(&id, &question)
+        db.add_message(&id, &question)?;
+        db.agent_dir(&id)
     })
     .await?;
+    request.agent_dir = granted.map(PathBuf::from);
     let _ = app.emit(db::CHANGED_EVENT, ());
 
     app.state::<AppState>()
