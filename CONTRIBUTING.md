@@ -80,18 +80,23 @@ say in the PR which platforms you verified on. The checks that matter:
 - Bar appears over a fullscreen app
 - Typing in the bar does *not* deactivate the app behind it
 - No Dock icon until the Workspace opens
+- Tray icon is present and its menu opens both windows
 - Switch to another app and back — the panel must still be there
   (`setHidesOnDeactivate(false)`; the default silently breaks this, and it only
   shows up in real use, never while the app is frontmost)
 
 **Windows**
 - Bar is absent from the taskbar and Alt-Tab
+- Tray icon is present; left click toggles the bar, right click opens the menu
 - Mica renders on 11, falls back cleanly on 10
 
 **Linux**
 - Renders with and without compositor blur
 - No blank window or resize crash
 - `starlux --toggle` shows the bar on both X11 and Wayland
+- Tray icon is present (needs libayatana-appindicator at runtime)
+- Under Wayland, startup logs that the hotkey could not be registered and the
+  app keeps running; under `STARLUX_FORCE_X11=1` it registers silently
 
 ## Architecture notes
 
