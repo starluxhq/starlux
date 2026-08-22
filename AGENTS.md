@@ -62,6 +62,24 @@ compiles `windows/macos.rs` or `windows/generic.rs`.
 - **Platform quirks live in `src-tauri/src/windows/`.** A workaround leaking into
   feature code is a bug in the layering.
 
+## Agent Configuration
+
+This file is the instructions, and it is the only copy. `CLAUDE.md` is one line
+importing it, because Claude Code reads `CLAUDE.md` and not `AGENTS.md`.
+
+Skills live in `.agents/skills/<name>/`, vendor-neutral and readable by anything.
+`.claude/skills/<name>` is a symlink into that directory — the form Claude Code
+documents as followed — so there is one copy of each skill rather than one per
+tool. Adding a skill means adding it under `.agents/` and linking it:
+
+```sh
+ln -s ../../.agents/skills/<name> .claude/skills/<name>
+```
+
+On Windows, git only materialises those symlinks with Developer Mode or
+`core.symlinks=true`; without it the skill is still in `.agents/` to read, it
+just is not loaded automatically.
+
 ## Commit & Pull Request Guidelines
 
 One short conventional-commit line, no body: `feat: add a tray icon`. Branch and
