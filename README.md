@@ -98,12 +98,15 @@ starlux --toggle
 On KDE, `scripts/install-kde-shortcut.sh` writes that binding for you:
 
 ```sh
-./scripts/install-kde-shortcut.sh                     # Meta+Space
-STARLUX_SHORTCUT="Ctrl+Alt+Space" ./scripts/install-kde-shortcut.sh
+./scripts/install-kde-shortcut.sh                  # Meta+Space
+STARLUX_SHORTCUT="Alt+Space" ./scripts/install-kde-shortcut.sh
 ```
 
-It does not check whether the key is already in use — if nothing happens, look
-for the conflict in System Settings and rerun with a different one.
+The key works straight away — the script registers it with the running shortcut
+daemon as well as writing the config, since the daemon only re-reads that file at
+login. It does not check whether the key is already in use, though: if nothing
+happens, look for the conflict in System Settings and rerun with a different one.
+Meta+Space is a common launcher binding.
 
 `starlux --toggle` works whether or not Starlux is running: a second launch hands
 its arguments to the first and exits. `--workspace` and `--ask "<question>"` do
