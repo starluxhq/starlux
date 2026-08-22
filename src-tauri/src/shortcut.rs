@@ -18,14 +18,14 @@ pub fn register(app: &AppHandle) {
     };
 
     if let Some(reason) = unsupported() {
-        eprintln!("starlux: no global hotkey — {reason}. {ADVICE}");
+        log::warn!("no global hotkey — {reason}. {ADVICE}");
         return;
     }
 
     let shortcut = match accelerator.parse::<Shortcut>() {
         Ok(shortcut) => shortcut,
         Err(err) => {
-            eprintln!("starlux: `{accelerator}` is not a valid hotkey: {err}");
+            log::warn!("`{accelerator}` is not a valid hotkey: {err}");
             return;
         }
     };
@@ -40,7 +40,7 @@ pub fn register(app: &AppHandle) {
         });
 
     if let Err(err) = registered {
-        eprintln!("starlux: could not register `{accelerator}`: {err}. {ADVICE}");
+        log::warn!("could not register `{accelerator}`: {err}. {ADVICE}");
     }
 }
 

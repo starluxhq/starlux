@@ -36,8 +36,9 @@ fn handle_argv(app: &tauri::AppHandle, argv: &[String]) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Before anything resolves a binary: a packaged build has to widen its
-    // PATH before it can find one.
-    shell_env::import();
+    // PATH before it can find one. Reported rather than logged, because the
+    // logger is a plugin and does not exist yet.
+    let path_import = shell_env::import();
     platform::prepare_graphics();
 
     #[allow(unused_mut)]
@@ -47,7 +48,22 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build());
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        // A packaged GUI app has no stdout, so without a file target the only
+        // diagnostics we emit are the ones nobody can read.
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                // `targets` replaces the defaults; `target` would append to
+                // them and write every line twice.
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+                        file_name: None,
+                    }),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                ])
+                .level(log::LevelFilter::Info)
+                .build(),
+        );
 
     // Registers WebviewPanelManager; without it `to_panel()` panics at startup.
     #[cfg(target_os = "macos")]
@@ -95,7 +111,9 @@ pub fn run() {
             }
             _ => {}
         })
-        .setup(|app| {
+        .setup(move |app| {
+            log::info!("{path_import}");
+
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 

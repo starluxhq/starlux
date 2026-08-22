@@ -65,6 +65,13 @@ pub async fn run(app: tauri::AppHandle, req: RunRequest, sink: Sink) -> Result<(
     }
 
     let mut child = command.spawn().map_err(|err| {
+        // The PATH goes to the log and not to the user: it is the whole answer
+        // to "installed, but not found", and far too long for a launcher.
+        log::warn!(
+            "could not start `{}`: {err}. PATH={}",
+            invocation.program,
+            std::env::var("PATH").unwrap_or_default()
+        );
         format!(
             "could not start `{}`: {err}. Is it installed and on PATH?",
             invocation.program

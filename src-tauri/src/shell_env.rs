@@ -11,27 +11,69 @@ use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::PathBuf;
 
+/// What the import did, reported so a packaged build can say why it cannot
+/// find a provider. Returned rather than logged because this runs before the
+/// logger exists.
+#[derive(Debug, PartialEq)]
+pub enum Outcome {
+    StartedFromATerminal,
+    Widened(usize),
+    AlreadyComplete,
+    Unavailable,
+}
+
+impl std::fmt::Display for Outcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::StartedFromATerminal => f.write_str(
+                "PATH left alone: started from a terminal, so it is already the shell's",
+            ),
+            Self::Widened(1) => f.write_str("PATH widened by 1 directory from the login shell"),
+            Self::Widened(count) => {
+                write!(
+                    f,
+                    "PATH widened by {count} directories from the login shell"
+                )
+            }
+            Self::AlreadyComplete => f.write_str("the login shell's PATH added nothing new"),
+            Self::Unavailable => f.write_str(
+                "could not read the login shell's PATH; using the inherited one, which may not \
+                 contain the CLI you installed",
+            ),
+        }
+    }
+}
+
 /// Widens the process `PATH` to what an interactive login shell would see.
 /// Every failure path leaves the inherited `PATH` untouched: a wrong `PATH` is
 /// worse than a narrow one.
-pub fn import() {
+pub fn import() -> Outcome {
     // Launched from a terminal, so the environment we already have is the one
     // the user's shell built.
     if std::env::var_os("TERM").is_some() {
-        return;
+        return Outcome::StartedFromATerminal;
     }
 
     let Some(dump) = capture() else {
-        return;
+        return Outcome::Unavailable;
     };
     let Some(captured) = parse_env0(&dump).remove("PATH") else {
-        return;
+        return Outcome::Unavailable;
     };
 
     let current = std::env::var("PATH").unwrap_or_default();
-    if let Some(merged) = merge_path(&captured, &current) {
-        std::env::set_var("PATH", merged);
-    }
+    let Some(merged) = merge_path(&captured, &current) else {
+        return Outcome::AlreadyComplete;
+    };
+
+    let known: HashSet<&str> = current.split(':').collect();
+    let added: HashSet<&str> = captured
+        .split(':')
+        .filter(|entry| !entry.is_empty() && !known.contains(entry))
+        .collect();
+
+    std::env::set_var("PATH", merged);
+    Outcome::Widened(added.len())
 }
 
 /// `env -0` writes NUL-separated `KEY=VALUE`, which is what makes it safe to
@@ -186,6 +228,15 @@ mod tests {
     fn the_working_directory_never_joins_the_path() {
         let merged = merge_path("/opt/bin::", "/usr/bin:").unwrap();
         assert_eq!(merged, "/opt/bin:/usr/bin");
+    }
+
+    #[test]
+    fn every_outcome_says_what_happened_to_the_path() {
+        assert!(Outcome::Widened(1).to_string().contains("1 directory from"));
+        assert!(Outcome::Widened(3)
+            .to_string()
+            .contains("3 directories from"));
+        assert!(Outcome::Unavailable.to_string().contains("inherited"));
     }
 
     #[test]
