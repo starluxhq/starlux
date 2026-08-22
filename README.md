@@ -37,10 +37,18 @@ so context survives restarts.
 
 ## Safety
 
-CLI agents like `claude` can read, write, and execute by default. Starlux runs
-them **chat-only** — tools disabled — so a hotkey question can never touch your
-filesystem. Agent mode is opt-in per conversation and requires picking the folder
-it's allowed to work in.
+CLI agents like `claude` can read, write, and execute by default. Starlux runs them
+**chat-only**: the run declares no tools at all and no MCP servers, so a hotkey
+question has no way to reach your filesystem. An empty allowlist is not enough for
+this — it reads as "nothing further is pre-approved" rather than "no tools" — and a
+denylist only covers the tools that existed when it was written.
+
+Agent mode is opt-in per conversation and starts by choosing the folder it may work
+in. That folder is the grant: inside it the assistant reads and edits without
+asking, because a launcher has nowhere to put an approval prompt. Whatever your own
+CLI settings refuse is still refused. The grant is stored with the conversation
+rather than the window, so leaving agent mode takes effect on the next turn wherever
+it is asked.
 
 ## Building from source
 
