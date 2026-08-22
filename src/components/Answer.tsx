@@ -1,5 +1,6 @@
 import { Streamdown } from "streamdown";
 import { markdown } from "../lib/markdown/plugins";
+import { TurnContext } from "../lib/turn";
 import type { Turn } from "../stores/useChat";
 
 export default function Answer({ turn }: { turn: Turn }) {
@@ -18,9 +19,11 @@ export default function Answer({ turn }: { turn: Turn }) {
 
   return (
     <div className="prose-starlux text-[13.5px] leading-[1.65] text-ink/90">
-      <Streamdown parseIncompleteMarkdown plugins={markdown}>
-        {turn.text}
-      </Streamdown>
+      <TurnContext.Provider value={turn.id}>
+        <Streamdown parseIncompleteMarkdown plugins={markdown}>
+          {turn.text}
+        </Streamdown>
+      </TurnContext.Provider>
     </div>
   );
 }
