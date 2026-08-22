@@ -19,6 +19,33 @@ die() {
 	exit 1
 }
 
+# KGlobalAccel takes a key as a Qt keycode, not a name. Letters, digits, Space
+# and the function keys cover what anyone binds a launcher to; anything else
+# falls back to picking the shortcut up at login.
+qt_keycode() {
+	total=0
+	rest=$1
+	while [ "$rest" != "${rest#*+}" ]; do
+		part=${rest%%+*}
+		rest=${rest#*+}
+		case $part in
+		Shift) total=$((total + 33554432)) ;;
+		Ctrl | Control) total=$((total + 67108864)) ;;
+		Alt) total=$((total + 134217728)) ;;
+		Meta | Super) total=$((total + 268435456)) ;;
+		*) return 1 ;;
+		esac
+	done
+	case $rest in
+	Space) total=$((total + 32)) ;;
+	[A-Z0-9]) total=$((total + $(printf '%d' "'$rest"))) ;;
+	[a-z]) total=$((total + $(printf '%d' "'$rest") - 32)) ;;
+	F[1-9] | F1[0-2]) total=$((total + 16777264 + ${rest#F} - 1)) ;;
+	*) return 1 ;;
+	esac
+	echo "$total"
+}
+
 kwriteconfig=$(command -v kwriteconfig6 || command -v kwriteconfig5 || true)
 [ -n "$kwriteconfig" ] || die "no kwriteconfig6 found. Is this a KDE Plasma session?"
 
@@ -51,18 +78,30 @@ command -v kbuildsycoca6 >/dev/null 2>&1 && kbuildsycoca6 --noincremental >/dev/
 "$kwriteconfig" --file kglobalshortcutsrc --group services --group "$ID" \
 	--key _launch "$KEY"
 
-# The daemon reads the file once at startup, so a live session needs a restart
-# to pick this up.
-if ! systemctl --user restart plasma-kglobalaccel.service 2>/dev/null; then
-	echo "note: could not restart the shortcut daemon — log out and back in to activate."
+# Writing the file is not enough: the running shortcut daemon has the old set in
+# memory and only re-reads at login. Registering over D-Bus is what makes the key
+# work now, and it persists to the same file in the same format.
+key=$(qt_keycode "$KEY") || key=
+if [ -n "$key" ] && command -v busctl >/dev/null 2>&1 &&
+	busctl --user call org.kde.kglobalaccel /kglobalaccel org.kde.KGlobalAccel \
+		doRegister as 4 "$ID" _launch "$NAME" "$NAME" >/dev/null 2>&1 &&
+	busctl --user call org.kde.kglobalaccel /kglobalaccel org.kde.KGlobalAccel \
+		setShortcut asaiu 4 "$ID" _launch "$NAME" "$NAME" 1 "$key" 2 >/dev/null 2>&1; then
+	when="now"
+else
+	# Plasma before 6.5 runs the daemon as its own unit; from 6.5 KWin serves the
+	# interface and this unit exits immediately, which is why it is the fallback.
+	systemctl --user restart plasma-kglobalaccel.service 2>/dev/null || true
+	when="after you log out and back in"
 fi
 
 cat <<EOF
-bound $KEY to \`$binary --toggle\`
+bound $KEY to \`$binary --toggle\`, active $when
 
 Nothing checked whether $KEY was already taken; if it does nothing, look for a
 conflict under System Settings > Keyboard > Shortcuts, or rerun with
-STARLUX_SHORTCUT set to something else.
+STARLUX_SHORTCUT set to something else. Meta+Space in particular is a common
+launcher binding.
 
 To undo: remove $apps/$ID and the [services][$ID] group from
 \${XDG_CONFIG_HOME:-\$HOME/.config}/kglobalshortcutsrc.
