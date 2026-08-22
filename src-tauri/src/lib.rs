@@ -3,7 +3,9 @@ mod commands;
 mod db;
 mod engine;
 mod platform;
+mod shortcut;
 mod state;
+mod tray;
 mod windows;
 
 use tauri::{Emitter, Manager, WindowEvent};
@@ -40,7 +42,8 @@ pub fn run() {
             handle_argv(app, &argv);
         }))
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_dialog::init());
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build());
 
     // Registers WebviewPanelManager; without it `to_panel()` panics at startup.
     #[cfg(target_os = "macos")]
@@ -97,6 +100,9 @@ pub fn run() {
             app.manage(db);
 
             windows::setup(app.handle())?;
+            tray::setup(app.handle())?;
+            shortcut::register(app.handle());
+
             // Shown here rather than via tauri.conf `visible`, so the first
             // show goes through the same path as every later one. On macOS
             // that is what makes the panel key and able to take keystrokes.
