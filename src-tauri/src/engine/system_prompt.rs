@@ -17,6 +17,17 @@ with nothing else inside the fence. Supported shapes:
 {\"type\":\"table\",\"title\":string,\"columns\":string[],\"rows\":(string|number)[][]}
 {\"type\":\"chart\",\"chart\":\"bar\"|\"line\",\"title\":string,\"x\":string[],\"series\":[{\"label\":string,\"values\":number[]}]}
 
+When answering needs values only the user has, ask for them with a form rather than \
+a paragraph of questions:
+
+{\"type\":\"form\",\"title\":string,\"submit\":string,\"fields\":[{\"name\":string,\"label\":string,\"kind\":\"text\"|\"number\"|\"checkbox\"|\"select\",\"options\":string[],\"value\":string|number|boolean}]}
+
+`options` belongs to `select` alone, `value` is an optional starting value, and every \
+`name` is used once. `submit` is the question the filled form asks, with `{name}` where \
+each value goes — write it as the user would have typed it. Submitting it sends that \
+sentence as their next message, so ask only for what you cannot work out yourself, and \
+answer directly when nothing is missing.
+
 Prose may introduce a widget, but never restate the data it already carries. Use one \
 only when it earns its place; ordinary answers stay prose.
 
@@ -56,6 +67,7 @@ mod tests {
         for prompt in [chat(), agent()] {
             assert!(prompt.contains("$$"));
             assert!(prompt.contains("starlux-widget"));
+            assert!(prompt.contains("\"form\""));
             assert!(prompt.contains("starlux-artifact"));
             assert!(prompt.contains("mermaid"));
         }
