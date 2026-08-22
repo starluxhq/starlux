@@ -211,7 +211,7 @@ export default function QuickBar() {
 
           <AgentMode dir={agentDir} />
 
-          {available.length > 0 ? (
+          {model ? (
             <ModelTrigger
               providerId={providerId}
               model={model}
@@ -244,7 +244,7 @@ export default function QuickBar() {
         </div>
       </div>
 
-      {picking ? (
+      {picking && model ? (
         <ModelMenu
           className="px-3 pt-2"
           providers={available}

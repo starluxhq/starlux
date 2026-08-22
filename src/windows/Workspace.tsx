@@ -178,7 +178,7 @@ export default function Workspace() {
         </div>
 
         <div className="relative shrink-0 border-t border-white/6 px-6 py-4">
-          {picking ? (
+          {picking && model ? (
             <ModelMenu
               className="absolute right-6 bottom-full mb-2"
               providers={available}
@@ -216,7 +216,7 @@ export default function Workspace() {
               marker={false}
             />
 
-            {available.length > 0 ? (
+            {model ? (
               <ModelTrigger
                 providerId={providerId}
                 model={model}

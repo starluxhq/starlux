@@ -57,6 +57,9 @@ pub const CHANGED_EVENT: &str = "starlux://conversations";
 
 /// The thread the Workspace comes back to after a restart.
 pub const ACTIVE_CONVERSATION: &str = "active_conversation";
+/// What the next run will ask for, which outlives any one conversation.
+pub const SELECTED_PROVIDER: &str = "selected_provider";
+pub const SELECTED_MODEL: &str = "selected_model";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -483,6 +486,32 @@ mod tests {
         db.set_agent_dir("c1", None).unwrap();
         assert_eq!(db.agent_dir("c1").unwrap(), None);
         assert_eq!(db.agent_dir("nobody").unwrap(), None);
+    }
+
+    #[test]
+    fn the_chosen_model_outlives_the_conversation_that_used_it() {
+        let db = db();
+        db.set_setting(SELECTED_PROVIDER, Some("claude-cli"))
+            .unwrap();
+        db.set_setting(SELECTED_MODEL, Some("opus")).unwrap();
+
+        // A run reports the exact build it used against the conversation. That
+        // must not disturb the alias the picker offers and the next run sends.
+        db.ensure_conversation("c1", "hello", "claude-cli", None)
+            .unwrap();
+        db.set_session("c1", "s1", Some("claude-opus-5-20260101"))
+            .unwrap();
+
+        assert_eq!(
+            db.thread("c1")
+                .unwrap()
+                .unwrap()
+                .conversation
+                .model
+                .as_deref(),
+            Some("claude-opus-5-20260101")
+        );
+        assert_eq!(db.setting(SELECTED_MODEL).unwrap().as_deref(), Some("opus"));
     }
 
     #[test]

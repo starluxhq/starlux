@@ -45,6 +45,11 @@ export interface Thread {
   messages: Message[];
 }
 
+export interface Selection {
+  providerId: string;
+  model: string;
+}
+
 export interface Provider {
   id: string;
   name: string;

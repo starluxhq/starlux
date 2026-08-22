@@ -43,6 +43,46 @@ pub fn list_providers() -> Vec<Provider> {
     providers::detect()
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Selection {
+    provider_id: String,
+    model: String,
+}
+
+/// The model a run asks for, remembered across restarts. Kept apart from the
+/// model a conversation reports having used: one is a choice, the other is a
+/// record, and they are not written in the same vocabulary — `opus` is asked
+/// for, `claude-opus-5` comes back.
+#[tauri::command]
+pub async fn selected_model(app: AppHandle) -> Result<Option<Selection>, String> {
+    db::query(&app, |db| {
+        Ok(
+            match (
+                db.setting(db::SELECTED_PROVIDER)?,
+                db.setting(db::SELECTED_MODEL)?,
+            ) {
+                (Some(provider_id), Some(model)) => Some(Selection { provider_id, model }),
+                _ => None,
+            },
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn set_selected_model(
+    app: AppHandle,
+    provider_id: String,
+    model: String,
+) -> Result<(), String> {
+    db::query(&app, move |db| {
+        db.set_setting(db::SELECTED_PROVIDER, Some(&provider_id))?;
+        db.set_setting(db::SELECTED_MODEL, Some(&model))
+    })
+    .await
+}
+
 #[tauri::command]
 pub fn active_conversation(state: tauri::State<'_, AppState>) -> Option<String> {
     state.active_conversation()

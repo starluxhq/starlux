@@ -1,5 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
-import type { Conversation, Provider, RunRequest, StreamEvent, Thread } from "./types";
+import type { Conversation, Provider, RunRequest, Selection, StreamEvent, Thread } from "./types";
 
 export const hideQuickBar = () => invoke<void>("hide_quickbar");
 export const toggleQuickBar = () => invoke<void>("toggle_quickbar");
@@ -9,6 +9,9 @@ export const openWorkspace = () => invoke<void>("open_workspace");
 export const setQuickbarHeight = (height: number) =>
   invoke<void>("set_quickbar_height", { height });
 export const listProviders = () => invoke<Provider[]>("list_providers");
+export const selectedModel = () => invoke<Selection | null>("selected_model");
+export const saveSelectedModel = (providerId: string, model: string) =>
+  invoke<void>("set_selected_model", { providerId, model });
 export const storeArtifact = (html: string) => invoke<string>("store_artifact", { html });
 export const cancelRun = (runId: string) => invoke<boolean>("cancel_run", { runId });
 
