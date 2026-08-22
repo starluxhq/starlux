@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "picking",
+  "description": "Choosing files to attach, and the folder agent mode may work in",
+  "windows": ["quickbar", "workspace"],
+  "permissions": [
+    "dialog:allow-open"
+  ]
+}

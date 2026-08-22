@@ -21,6 +21,12 @@ pub fn toggle_quickbar(app: AppHandle) -> Result<(), String> {
     windows::toggle_quickbar(&app).map_err(|e| e.to_string())
 }
 
+/// The bar measures its own content and asks for that height; `windows` bounds it.
+#[tauri::command]
+pub fn set_quickbar_height(app: AppHandle, height: f64) -> Result<(), String> {
+    windows::set_quickbar_height(&app, height).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn open_workspace(app: AppHandle) -> Result<(), String> {
     windows::open_workspace(&app).map_err(|e| e.to_string())

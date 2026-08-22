@@ -4,6 +4,10 @@ import type { Conversation, Provider, RunRequest, StreamEvent, Thread } from "./
 export const hideQuickBar = () => invoke<void>("hide_quickbar");
 export const toggleQuickBar = () => invoke<void>("toggle_quickbar");
 export const openWorkspace = () => invoke<void>("open_workspace");
+
+/** The bar measures its own content; Rust bounds what it will accept. */
+export const setQuickbarHeight = (height: number) =>
+  invoke<void>("set_quickbar_height", { height });
 export const listProviders = () => invoke<Provider[]>("list_providers");
 export const storeArtifact = (html: string) => invoke<string>("store_artifact", { html });
 export const cancelRun = (runId: string) => invoke<boolean>("cancel_run", { runId });

@@ -20,13 +20,27 @@ pub const WORKSPACE: &str = "workspace";
 /// Tells the Workspace which conversation to show when it comes up.
 const FOCUS_EVENT: &str = "starlux://focus";
 
+const BAR_WIDTH: f64 = 680.0;
+/// The bar asks for its own height, so a row of attachments or an open model
+/// list grows the window instead of being clipped by it. Bounded here rather
+/// than trusted, and only ever two-ish sizes — a window that resized per token
+/// is what crashes WebKitGTK.
+const BAR_MIN_HEIGHT: f64 = 44.0;
+const BAR_MAX_HEIGHT: f64 = 480.0;
+
 fn window(app: &AppHandle, label: &str) -> tauri::Result<WebviewWindow> {
     app.get_webview_window(label)
         .ok_or_else(|| tauri::Error::WindowNotFound)
 }
 
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
-    imp::configure_quickbar(&window(app, QUICKBAR)?)
+    let quickbar = window(app, QUICKBAR)?;
+    // The bar drives its own height, so it has to be allowed to be short. A
+    // non-resizable window is pinned to its start size by the toolkit, which is
+    // why the width is bounded here instead.
+    quickbar.set_min_size(Some(tauri::LogicalSize::new(BAR_WIDTH, BAR_MIN_HEIGHT)))?;
+    quickbar.set_max_size(Some(tauri::LogicalSize::new(BAR_WIDTH, BAR_MAX_HEIGHT)))?;
+    imp::configure_quickbar(&quickbar)
 }
 
 pub fn show_quickbar(app: &AppHandle) -> tauri::Result<()> {
@@ -35,6 +49,11 @@ pub fn show_quickbar(app: &AppHandle) -> tauri::Result<()> {
 
 pub fn hide_quickbar(app: &AppHandle) -> tauri::Result<()> {
     imp::hide_quickbar(app)
+}
+
+pub fn set_quickbar_height(app: &AppHandle, height: f64) -> tauri::Result<()> {
+    let height = height.clamp(BAR_MIN_HEIGHT, BAR_MAX_HEIGHT);
+    window(app, QUICKBAR)?.set_size(tauri::LogicalSize::new(BAR_WIDTH, height))
 }
 
 pub fn toggle_quickbar(app: &AppHandle) -> tauri::Result<()> {
