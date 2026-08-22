@@ -11,6 +11,7 @@ import Answer from "../components/Answer";
 import Attachments, { type Attachment } from "../components/Attachments";
 import Composer from "../components/Composer";
 import { ModelMenu, ModelTrigger } from "../components/ModelPicker";
+import ProviderHint from "../components/ProviderHint";
 import Rail from "../components/Rail";
 import { onAsk, onStream } from "../lib/events";
 import { PICKER } from "../lib/models";
@@ -130,7 +131,6 @@ export default function QuickBar() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [status, stop, newConversation, picking]);
 
-  const available = providers.filter((provider) => provider.available);
   const answers = turns.filter((turn) => turn.role === "assistant");
 
   const submit = () => {
@@ -220,9 +220,7 @@ export default function QuickBar() {
               onToggle={() => setPicking((was) => !was)}
             />
           ) : (
-            <span className="shrink-0 font-mono text-[10px] whitespace-nowrap text-class-m uppercase">
-              no provider
-            </span>
+            <ProviderHint providers={providers} />
           )}
 
           <button
@@ -248,7 +246,7 @@ export default function QuickBar() {
       {picking && model ? (
         <ModelMenu
           className="px-3 pt-2"
-          providers={available}
+          providers={providers}
           providerId={providerId}
           model={model}
           limits={limits}

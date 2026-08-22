@@ -64,13 +64,22 @@ export interface Selection {
   model: string;
 }
 
+/** Installed and signed in are different problems with different fixes, so a
+ *  provider nobody is signed in to is not reported as absent. */
+export type Availability =
+  | { state: "missing" }
+  | { state: "signedOut" }
+  | { state: "ready"; plan: string | null };
+
 export interface Provider {
   id: string;
   name: string;
   binary: string;
-  available: boolean;
+  availability: Availability;
   models: string[];
 }
+
+export const isReady = (provider: Provider) => provider.availability.state === "ready";
 
 export type SpectralClass = "a" | "f" | "g" | "k" | "m";
 

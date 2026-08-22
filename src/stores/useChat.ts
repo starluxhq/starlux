@@ -9,7 +9,7 @@ import {
   selectedModel,
   setAgentDir as saveAgentDir,
 } from "../lib/ipc";
-import type { Message, Provider, RateLimit, StreamEvent, Usage } from "../lib/types";
+import { isReady, type Message, type Provider, type RateLimit, type StreamEvent, type Usage } from "../lib/types";
 
 export type Status = "idle" | "streaming" | "error";
 
@@ -109,7 +109,7 @@ export const useChat = create<ChatState>((set, get) => ({
       selectedModel(),
       loadRateLimits(),
     ]);
-    const usable = providers.filter((provider) => provider.available);
+    const usable = providers.filter(isReady);
     const chosen =
       usable.find(
         (provider) => provider.id === saved?.providerId && provider.models.includes(saved.model),
