@@ -3,12 +3,13 @@ import {
   cancelRun,
   listProviders,
   loadConversation,
+  rateLimits as loadRateLimits,
   runPrompt,
   saveSelectedModel,
   selectedModel,
   setAgentDir as saveAgentDir,
 } from "../lib/ipc";
-import type { Message, Provider, StreamEvent, Usage } from "../lib/types";
+import type { Message, Provider, RateLimit, StreamEvent, Usage } from "../lib/types";
 
 export type Status = "idle" | "streaming" | "error";
 
@@ -24,6 +25,8 @@ export interface Turn {
 
 interface ChatState {
   providers: Provider[];
+  /** Keyed by provider: each reports its own window, and some report none. */
+  limits: Record<string, RateLimit>;
   providerId: string;
   model: string | null;
   conversationId: string | null;
@@ -87,6 +90,7 @@ const toTurn = (message: Message): Turn => ({
 
 export const useChat = create<ChatState>((set, get) => ({
   providers: [],
+  limits: {},
   providerId: "claude-cli",
   model: null,
   conversationId: null,
@@ -100,7 +104,11 @@ export const useChat = create<ChatState>((set, get) => ({
   // the next question asks for, on this launch or the next one. A saved choice
   // whose provider or model has since gone is dropped rather than sent.
   loadProviders: async () => {
-    const [providers, saved] = await Promise.all([listProviders(), selectedModel()]);
+    const [providers, saved, limits] = await Promise.all([
+      listProviders(),
+      selectedModel(),
+      loadRateLimits(),
+    ]);
     const usable = providers.filter((provider) => provider.available);
     const chosen =
       usable.find(
@@ -109,6 +117,7 @@ export const useChat = create<ChatState>((set, get) => ({
 
     set({
       providers,
+      limits: Object.fromEntries(limits.map((limit) => [limit.providerId, limit])),
       ...(chosen && {
         providerId: chosen.id,
         model: chosen.models.includes(saved?.model ?? "") ? saved!.model : chosen.models[0],
@@ -192,6 +201,10 @@ export const useChat = create<ChatState>((set, get) => ({
             runId: null,
             turns: patch(state.turns, event.runId, { text: event.text, usage: event.usage }),
           };
+        // Volunteered by the provider partway through a run, so it lands
+        // whether or not the answer does.
+        case "rateLimit":
+          return { limits: { ...state.limits, [event.limit.providerId]: event.limit } };
         case "error":
           return {
             status: "error",

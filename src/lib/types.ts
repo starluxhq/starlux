@@ -4,12 +4,26 @@ export interface Usage {
   costUsd?: number;
 }
 
+/** The provider's view of the user's whole subscription window — every session
+ *  they have run, terminal included — not Starlux's share of it. */
+export interface RateLimit {
+  providerId: string;
+  /** The provider's own name for the window (`five_hour`, `weekly`, ...). */
+  kind: string;
+  status: string;
+  resetsAt: number | null;
+  usingOverage: boolean;
+  /** When Starlux saw this, not when the provider computed it. */
+  observedAt: number;
+}
+
 export type StreamEvent =
   | { kind: "start"; runId: string; conversationId: string; providerId: string; prompt: string }
   | { kind: "chunk"; runId: string; delta: string }
   | { kind: "meta"; runId: string; sessionId: string | null; model: string | null }
   | { kind: "end"; runId: string; text: string; sessionId: string | null; usage: Usage | null }
-  | { kind: "error"; runId: string; message: string; stderrTail: string };
+  | { kind: "error"; runId: string; message: string; stderrTail: string }
+  | { kind: "rateLimit"; runId: string; limit: RateLimit };
 
 export interface RunRequest {
   runId: string;

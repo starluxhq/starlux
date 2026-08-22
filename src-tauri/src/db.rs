@@ -6,7 +6,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::engine::Usage;
+use crate::engine::{RateLimit, Usage};
 
 const SCHEMA_V1: &str = "
 CREATE TABLE conversations (
@@ -60,6 +60,9 @@ pub const ACTIVE_CONVERSATION: &str = "active_conversation";
 /// What the next run will ask for, which outlives any one conversation.
 pub const SELECTED_PROVIDER: &str = "selected_provider";
 pub const SELECTED_MODEL: &str = "selected_model";
+/// One row per provider holding only its latest window. A snapshot of something
+/// that moves, not a history: `messages` is where anything worth keeping goes.
+const RATE_LIMIT_PREFIX: &str = "rate_limit:";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -260,6 +263,30 @@ impl Db {
             |row| row.get(0),
         )
         .optional()
+    }
+
+    pub fn set_rate_limit(&self, limit: &RateLimit) -> rusqlite::Result<()> {
+        let Ok(value) = serde_json::to_string(limit) else {
+            return Ok(());
+        };
+        self.set_setting(
+            &format!("{RATE_LIMIT_PREFIX}{}", limit.provider_id),
+            Some(&value),
+        )
+    }
+
+    pub fn rate_limits(&self) -> rusqlite::Result<Vec<RateLimit>> {
+        let conn = self.0.lock().unwrap();
+        let mut statement = conn.prepare("SELECT value FROM settings WHERE key LIKE ?1")?;
+        let rows = statement.query_map(params![format!("{RATE_LIMIT_PREFIX}%")], |row| {
+            row.get::<_, String>(0)
+        })?;
+        Ok(rows
+            .filter_map(Result::ok)
+            // A row an older build wrote in a shape this one cannot read is
+            // dropped, not fatal: it is a cache of something a run refreshes.
+            .filter_map(|value| serde_json::from_str(&value).ok())
+            .collect())
     }
 
     pub fn rename_conversation(&self, id: &str, title: &str) -> rusqlite::Result<()> {
@@ -512,6 +539,60 @@ mod tests {
             Some("claude-opus-5-20260101")
         );
         assert_eq!(db.setting(SELECTED_MODEL).unwrap().as_deref(), Some("opus"));
+    }
+
+    #[test]
+    fn only_the_latest_window_per_provider_is_kept() {
+        let db = db();
+        let five_hour = RateLimit {
+            provider_id: "claude-cli".into(),
+            kind: "five_hour".into(),
+            status: "allowed".into(),
+            resets_at: Some(1787421000),
+            using_overage: false,
+            observed_at: 1787420000,
+        };
+        db.set_rate_limit(&five_hour).unwrap();
+        db.set_rate_limit(&RateLimit {
+            status: "allowed_warning".into(),
+            observed_at: 1787420500,
+            ..five_hour.clone()
+        })
+        .unwrap();
+        db.set_rate_limit(&RateLimit {
+            provider_id: "gemini-cli".into(),
+            ..five_hour.clone()
+        })
+        .unwrap();
+
+        let mut stored = db.rate_limits().unwrap();
+        stored.sort_by(|a, b| a.provider_id.cmp(&b.provider_id));
+        assert_eq!(stored.len(), 2);
+        assert_eq!(stored[0].provider_id, "claude-cli");
+        assert_eq!(stored[0].status, "allowed_warning");
+        assert_eq!(stored[1].provider_id, "gemini-cli");
+    }
+
+    /// The window is a cache a run refreshes, so a row this build cannot read
+    /// must not take the readable ones down with it.
+    #[test]
+    fn an_unreadable_window_row_is_skipped() {
+        let db = db();
+        db.set_setting("rate_limit:broken", Some("{oh dear"))
+            .unwrap();
+        db.set_rate_limit(&RateLimit {
+            provider_id: "claude-cli".into(),
+            kind: "five_hour".into(),
+            status: "allowed".into(),
+            resets_at: None,
+            using_overage: false,
+            observed_at: 1,
+        })
+        .unwrap();
+
+        let stored = db.rate_limits().unwrap();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].provider_id, "claude-cli");
     }
 
     #[test]

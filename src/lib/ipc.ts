@@ -1,5 +1,13 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
-import type { Conversation, Provider, RunRequest, Selection, StreamEvent, Thread } from "./types";
+import type {
+  Conversation,
+  Provider,
+  RateLimit,
+  RunRequest,
+  Selection,
+  StreamEvent,
+  Thread,
+} from "./types";
 
 export const hideQuickBar = () => invoke<void>("hide_quickbar");
 export const toggleQuickBar = () => invoke<void>("toggle_quickbar");
@@ -10,6 +18,10 @@ export const setQuickbarHeight = (height: number) =>
   invoke<void>("set_quickbar_height", { height });
 export const listProviders = () => invoke<Provider[]>("list_providers");
 export const selectedModel = () => invoke<Selection | null>("selected_model");
+
+/** The last window each provider reported, so the bar has something to show
+ *  before the first run of this launch refreshes it. */
+export const rateLimits = () => invoke<RateLimit[]>("rate_limits");
 export const saveSelectedModel = (providerId: string, model: string) =>
   invoke<void>("set_selected_model", { providerId, model });
 export const storeArtifact = (html: string) => invoke<string>("store_artifact", { html });
