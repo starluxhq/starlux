@@ -15,6 +15,7 @@ src-tauri/gen/
 # Editors and local agent state
 .idea/
 .claude/settings.local.json
+CLAUDE.md
 .DS_Store
 *.swp
 

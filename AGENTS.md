@@ -64,8 +64,7 @@ compiles `windows/macos.rs` or `windows/generic.rs`.
 
 ## Agent Configuration
 
-This file is the instructions, and it is the only copy. `CLAUDE.md` is one line
-importing it, because Claude Code reads `CLAUDE.md` and not `AGENTS.md`.
+This file is the instructions, and it is the only copy.
 
 Skills live in `.agents/skills/<name>/`, vendor-neutral and readable by anything.
 `.claude/skills/<name>` is a symlink into that directory — the form Claude Code
