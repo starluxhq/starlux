@@ -11,7 +11,9 @@ import { ModelMenu, ModelTrigger } from "../components/ModelPicker";
 import ProviderHint from "../components/ProviderHint";
 import Question from "../components/Question";
 import Rail from "../components/Rail";
+import WindowControls from "../components/WindowControls";
 import { PICKER } from "../lib/models";
+import { platform } from "../lib/platform";
 import { onConversationsChanged, onFocusConversation, onStream } from "../lib/events";
 import { activeConversation } from "../lib/ipc";
 import { railState } from "../lib/turn";
@@ -119,133 +121,149 @@ export default function Workspace() {
   };
 
   return (
-    <div className="flex h-full bg-void text-ink">
-      <aside className="flex w-64 shrink-0 flex-col border-r border-white/6 bg-dust/60">
-        <div className="px-5 py-4">
-          <span className="font-serif text-[19px] tracking-tight">Starlux</span>
-        </div>
-        <div className="flex items-baseline justify-between px-5 pb-3">
-          <p className="font-mono text-[10px] tracking-wider text-faint uppercase">Conversations</p>
-          <button
-            type="button"
-            onClick={() => {
-              setDraft("");
-              newConversation();
-            }}
-            className="font-mono text-[10px] tracking-wider text-muted uppercase hover:text-ink"
-          >
-            New
-          </button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-          <ConversationList
-            items={items}
-            activeId={conversationId}
-            onOpen={(id) => void openConversation(id)}
-            onDelete={(id) => {
-              if (id === conversationId) newConversation();
-              void remove(id);
-            }}
-          />
-        </div>
-      </aside>
+    <div className="flex h-full flex-col bg-void text-ink">
+      {/* The window has no toolkit chrome, so this strip is both the handle it
+          is moved by and the corner its controls sit in. Indented on macOS,
+          where the traffic lights are drawn over the page's own top-left. */}
+      <div
+        data-tauri-drag-region
+        className={`flex h-10 shrink-0 items-center gap-4 border-b border-white/6 pr-2 ${
+          platform === "macos" ? "pl-[82px]" : "pl-5"
+        }`}
+      >
+        <span data-tauri-drag-region className="font-serif text-[15px] tracking-tight">
+          Starlux
+        </span>
 
-      <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-end border-b border-white/6 px-6 py-3">
+        <div className="ml-auto flex min-w-0 items-center gap-4">
           <AgentMode
             dir={agentDir}
             onPick={() => void pickFolder()}
             onClear={() => void setAgentDir(null)}
           />
-        </header>
-
-        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-6">
-          {turns.length === 0 ? (
-            <p className="max-w-md font-serif text-[22px] leading-snug text-muted">
-              Light that left a long time ago, arriving one token at a time.
-            </p>
-          ) : (
-            turns.map((turn) =>
-              turn.role === "user" ? (
-                <Question key={turn.id} text={turn.text} />
-              ) : (
-                <article key={turn.id} className="flex gap-4">
-                  <Rail status={railState(turn, runId, status)} className="mt-1 mb-1" />
-                  <div className="min-w-0 flex-1">
-                    <Answer turn={turn} />
-                  </div>
-                </article>
-              ),
-            )
-          )}
+          {platform === "macos" ? null : <WindowControls />}
         </div>
+      </div>
 
-        <div className="relative shrink-0 border-t border-white/6 px-6 py-4">
-          {picking && model ? (
-            <ModelMenu
-              className="absolute right-6 bottom-full mb-2"
-              providers={providers}
-              providerId={providerId}
-              model={model}
-              limits={limits}
-              onSelect={(nextProvider, nextModel) => {
-                selectModel(nextProvider, nextModel);
-                setPicking(false);
-              }}
-            />
-          ) : null}
-
-          <Attachments
-            className="pb-3"
-            items={files}
-            onRemove={(path) => setFiles((current) => current.filter((file) => file.path !== path))}
-          />
-
-          <div className="flex items-end gap-3">
+      <div className="flex min-h-0 flex-1">
+        <aside className="flex w-64 shrink-0 flex-col border-r border-white/6 bg-dust/60">
+          <div className="flex items-baseline justify-between px-5 pt-4 pb-3">
+            <p className="font-mono text-[10px] tracking-wider text-faint uppercase">
+              Conversations
+            </p>
             <button
               type="button"
-              onClick={() => void attach()}
-              title="Attach files"
-              className="shrink-0 rounded-md px-1 pb-1 text-[19px] leading-none text-faint hover:text-ink"
+              onClick={() => {
+                setDraft("");
+                newConversation();
+              }}
+              className="font-mono text-[10px] tracking-wider text-muted uppercase hover:text-ink"
             >
-              +
+              New
             </button>
-
-            <Composer
-              value={draft}
-              placeholder={turns.length > 0 ? "Ask a follow-up" : "Ask anything"}
-              onChange={setDraft}
-              onSubmit={submit}
-              maxRows={8}
-              marker={false}
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+            <ConversationList
+              items={items}
+              activeId={conversationId}
+              onOpen={(id) => void openConversation(id)}
+              onDelete={(id) => {
+                if (id === conversationId) newConversation();
+                void remove(id);
+              }}
             />
+          </div>
+        </aside>
 
-            {context ? <ContextMeter context={context} /> : null}
-
-            {model ? (
-              <ModelTrigger
-                providerId={providerId}
-                model={model}
-                open={picking}
-                onToggle={() => setPicking((was) => !was)}
-              />
+        <main className="flex min-w-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-6">
+            {turns.length === 0 ? (
+              <p className="max-w-md font-serif text-[22px] leading-snug text-muted">
+                Light that left a long time ago, arriving one token at a time.
+              </p>
             ) : (
-              <ProviderHint providers={providers} />
+              turns.map((turn) =>
+                turn.role === "user" ? (
+                  <Question key={turn.id} text={turn.text} />
+                ) : (
+                  <article key={turn.id} className="flex gap-4">
+                    <Rail status={railState(turn, runId, status)} className="mt-1 mb-1" />
+                    <div className="min-w-0 flex-1">
+                      <Answer turn={turn} />
+                    </div>
+                  </article>
+                ),
+              )
             )}
           </div>
-        </div>
-      </main>
 
-      {expanded ? (
-        <aside className="flex w-[46%] min-w-0 shrink-0 flex-col border-l border-white/6">
-          <ArtifactViewer
-            html={expanded.html}
-            title={expanded.title}
-            variant="pane"
-            onCollapse={collapse}
-          />
-        </aside>
-      ) : null}
+          <div className="relative shrink-0 border-t border-white/6 px-6 py-4">
+            {picking && model ? (
+              <ModelMenu
+                className="absolute right-6 bottom-full mb-2"
+                providers={providers}
+                providerId={providerId}
+                model={model}
+                limits={limits}
+                onSelect={(nextProvider, nextModel) => {
+                  selectModel(nextProvider, nextModel);
+                  setPicking(false);
+                }}
+              />
+            ) : null}
+
+            <Attachments
+              className="pb-3"
+              items={files}
+              onRemove={(path) => setFiles((current) => current.filter((file) => file.path !== path))}
+            />
+
+            <div className="flex items-end gap-3">
+              <button
+                type="button"
+                onClick={() => void attach()}
+                title="Attach files"
+                className="shrink-0 rounded-md px-1 pb-1 text-[19px] leading-none text-faint hover:text-ink"
+              >
+                +
+              </button>
+
+              <Composer
+                value={draft}
+                placeholder={turns.length > 0 ? "Ask a follow-up" : "Ask anything"}
+                onChange={setDraft}
+                onSubmit={submit}
+                maxRows={8}
+                marker={false}
+              />
+
+              {context ? <ContextMeter context={context} /> : null}
+
+              {model ? (
+                <ModelTrigger
+                  providerId={providerId}
+                  model={model}
+                  open={picking}
+                  onToggle={() => setPicking((was) => !was)}
+                />
+              ) : (
+                <ProviderHint providers={providers} />
+              )}
+            </div>
+          </div>
+        </main>
+
+        {expanded ? (
+          <aside className="flex w-[46%] min-w-0 shrink-0 flex-col border-l border-white/6">
+            <ArtifactViewer
+              html={expanded.html}
+              title={expanded.title}
+              variant="pane"
+              onCollapse={collapse}
+            />
+          </aside>
+        ) : null}
+      </div>
     </div>
   );
 }

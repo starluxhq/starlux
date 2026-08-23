@@ -13,6 +13,13 @@ pub fn configure_quickbar(_window: &WebviewWindow) -> tauri::Result<()> {
     Ok(())
 }
 
+/// The Workspace draws its own title bar, so the toolkit's comes off here
+/// rather than in the config: macOS keeps a real title bar and only makes it
+/// transparent, and there is no such half-measure to configure on these two.
+pub fn configure_workspace(window: &WebviewWindow) -> tauri::Result<()> {
+    window.set_decorations(false)
+}
+
 pub fn show_quickbar(app: &AppHandle) -> tauri::Result<()> {
     let quickbar = window(app, QUICKBAR)?;
     quickbar.show()?;
