@@ -12,6 +12,7 @@ import {
 } from "../lib/ipc";
 import {
   isReady,
+  type Attachment,
   type Context,
   type Message,
   type Provider,
@@ -30,6 +31,9 @@ export interface Turn {
   usage?: Usage | null;
   error?: string;
   stderrTail?: string;
+  /** Carried on the question so asking it again sends the same files. A retry
+   *  that quietly dropped a screenshot would change what the answer means. */
+  attachments?: Attachment[];
 }
 
 interface ChatState {
@@ -50,7 +54,7 @@ interface ChatState {
   apply: (event: StreamEvent) => void;
   openConversation: (id: string) => Promise<void>;
   newConversation: () => void;
-  send: (prompt: string) => Promise<void>;
+  send: (prompt: string, files?: Attachment[]) => Promise<void>;
   retry: (id: string) => Promise<void>;
   edit: (id: string, prompt: string) => Promise<void>;
   stop: () => Promise<void>;
@@ -98,6 +102,7 @@ const toTurn = (message: Message): Turn => ({
   model: message.model,
   usage: message.usage,
   error: message.error ?? undefined,
+  attachments: message.attachments,
 });
 
 export const useChat = create<ChatState>((set, get) => ({
@@ -178,6 +183,7 @@ export const useChat = create<ChatState>((set, get) => ({
             id: questionId(event.runId),
             role: "user",
             text: event.prompt,
+            attachments: event.attachments,
           });
           return {
             conversationId: event.conversationId,
@@ -261,10 +267,10 @@ export const useChat = create<ChatState>((set, get) => ({
     set({ status: "idle" });
   },
 
-  send: async (prompt) => {
+  send: async (prompt, files = []) => {
     const trimmed = prompt.trim();
     if (!trimmed || get().status === "streaming") return;
-    await dispatch(crypto.randomUUID(), trimmed);
+    await dispatch(crypto.randomUUID(), trimmed, files);
   },
 
   // Asking again under the answer's own id. `add_message` upserts on that id
@@ -284,7 +290,7 @@ export const useChat = create<ChatState>((set, get) => ({
     await get().stop();
     await truncateAfter(conversationId, id);
     set({ turns: turns.slice(0, at + 1) });
-    await dispatch(id, question.text);
+    await dispatch(id, question.text, question.attachments ?? []);
   },
 
   // The question keeps its id too: `run_prompt` writes it as `{runId}:u`, the
@@ -298,21 +304,32 @@ export const useChat = create<ChatState>((set, get) => ({
     await get().stop();
     await truncateAfter(conversationId, id);
     set({ turns: turns.slice(0, at + 1) });
-    await dispatch(runOf(id), trimmed);
+    await dispatch(runOf(id), trimmed, turns[at].attachments ?? []);
   },
 }));
 
 /** One run, under an id the caller chooses — new for a question just asked,
  *  the old one for a question being asked again. */
-async function dispatch(runId: string, prompt: string) {
+async function dispatch(runId: string, prompt: string, files: Attachment[]) {
   const { conversationId, providerId, model, sessionId, agentDir, apply } = useChat.getState();
   const id = conversationId ?? crypto.randomUUID();
 
-  apply({ kind: "start", runId, conversationId: id, providerId, prompt });
+  // Shown right away; the run replaces them with what the core actually read,
+  // which is where a file's size and type come from.
+  apply({ kind: "start", runId, conversationId: id, providerId, prompt, attachments: files });
 
   try {
     await runPrompt(
-      { runId, conversationId: id, providerId, prompt, sessionId, model, agentDir },
+      {
+        runId,
+        conversationId: id,
+        providerId,
+        prompt,
+        sessionId,
+        model,
+        agentDir,
+        attachments: files.map((file) => file.path),
+      },
       apply,
     );
   } catch (error) {

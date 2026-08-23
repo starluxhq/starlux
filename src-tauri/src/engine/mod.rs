@@ -5,7 +5,7 @@ pub mod sink;
 pub mod system_prompt;
 pub mod title;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -24,6 +24,79 @@ pub struct RunRequest {
     /// `None` is chat-only: the CLI cannot touch the filesystem.
     #[serde(default)]
     pub agent_dir: Option<PathBuf>,
+    /// Paths, not contents: this arrives over IPC from a window, and a window
+    /// naming a file is not the same as it having handed one over. The core
+    /// reads them itself, under its own size cap.
+    #[serde(default)]
+    pub attachments: Vec<PathBuf>,
+}
+
+/// What was attached, as the database and the windows see it: a description,
+/// never the contents.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Attachment {
+    pub path: String,
+    pub name: String,
+    pub mime: Option<String>,
+    pub bytes: Option<i64>,
+}
+
+/// An attachment the core has read. Adapters are handed these rather than
+/// paths, which is what keeps `invocation` infallible and unit-testable.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Loaded {
+    pub path: PathBuf,
+    pub name: String,
+    pub mime: String,
+    pub data: Vec<u8>,
+}
+
+impl Loaded {
+    pub fn described(&self) -> Attachment {
+        Attachment {
+            path: self.path.to_string_lossy().into_owned(),
+            name: self.name.clone(),
+            mime: Some(self.mime.clone()),
+            bytes: Some(self.data.len() as i64),
+        }
+    }
+}
+
+/// Describes a file without opening it, for the question row that is written
+/// before the run starts. A file that has since gone still gets its row: the
+/// user attached it, and the run is about to say so itself.
+pub fn describe(path: &Path) -> Attachment {
+    Attachment {
+        path: path.to_string_lossy().into_owned(),
+        name: file_name(path),
+        mime: Some(mime_of(path).to_owned()),
+        bytes: std::fs::metadata(path).ok().map(|meta| meta.len() as i64),
+    }
+}
+
+pub fn file_name(path: &Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.to_string_lossy().into_owned())
+}
+
+/// Guessed from the extension, because the alternative is sniffing bytes for
+/// something only the provider needs to be roughly right about.
+pub fn mime_of(path: &Path) -> &'static str {
+    let extension = path
+        .extension()
+        .map(|ext| ext.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    match extension.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "pdf" => "application/pdf",
+        "" => "application/octet-stream",
+        _ => "text/plain",
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -85,6 +158,7 @@ pub enum StreamEvent {
         conversation_id: String,
         provider_id: String,
         prompt: String,
+        attachments: Vec<Attachment>,
     },
     Chunk {
         run_id: String,
@@ -120,6 +194,9 @@ pub struct Invocation {
     pub args: Vec<String>,
     pub stdin: Option<String>,
     pub cwd: Option<PathBuf>,
+    /// Added to the child's environment, never replacing it: a CLI that reads
+    /// its configuration from one of these still needs the PATH it was found on.
+    pub env: Vec<(String, String)>,
 }
 
 #[derive(Debug, Default)]
@@ -132,7 +209,7 @@ pub struct ParseState {
 }
 
 pub trait CliAdapter: Send + Sync {
-    fn invocation(&self, req: &RunRequest) -> Invocation;
+    fn invocation(&self, req: &RunRequest, files: &[Loaded]) -> Invocation;
 
     /// A one-shot run that reads the opening question and answers with a name
     /// for the conversation. On the trait rather than inside the Claude adapter

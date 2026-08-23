@@ -81,6 +81,7 @@ impl Sink {
                 model: self.model.lock().unwrap().clone(),
                 usage: usage.clone(),
                 error: None,
+                attachments: Vec::new(),
             }),
             StreamEvent::RateLimit { limit, .. } => {
                 let limit = limit.clone();
@@ -99,6 +100,7 @@ impl Sink {
                     model: self.model.lock().unwrap().clone(),
                     usage: None,
                     error: Some(message.clone()),
+                    attachments: Vec::new(),
                 })
             }
             _ => {}
