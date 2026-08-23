@@ -30,6 +30,15 @@ describe("TurnActions", () => {
     expect(screen.getByLabelText("Copied")).toBeTruthy();
   });
 
+  // Its row is what keeps a turn from shifting under the pointer the moment it
+  // is hovered, so it is there whether or not it has anything in it.
+  it("keeps its row when there is nothing to offer at all", () => {
+    const { container } = render(<TurnActions onCopy={null} />);
+    const row = container.firstChild as HTMLElement;
+    expect(row.className).toContain("h-6");
+    expect(row.querySelectorAll("button")).toHaveLength(0);
+  });
+
   it("reports each button to its own handler", () => {
     const onEdit = vi.fn();
     const onRetry = vi.fn();
