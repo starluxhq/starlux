@@ -62,6 +62,18 @@ describe("Turn", () => {
     expect(screen.queryByLabelText("Copy")).toBeNull();
   });
 
+  // Selection is off for the app as a whole, so what was said has to ask for
+  // it back — and it is the only thing a copy is ever taken from.
+  it("leaves what was said selectable", () => {
+    const { unmount } = turn();
+    expect(screen.getByText(question.text).className).toContain("select-text");
+    unmount();
+
+    const answer: ChatTurn = { id: "run-1", role: "assistant", text: "surface temperature" };
+    const { container } = turn({ turn: answer });
+    expect(container.querySelector(".prose-starlux")?.className).toContain("select-text");
+  });
+
   it("edits in place and reports the rewritten question", () => {
     const onEdit = vi.fn();
     turn({ onEdit });

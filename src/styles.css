@@ -46,6 +46,21 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* This is an app, not a page: dragging across a label or a button should not
+   leave a trail of highlighted chrome behind it. Selecting is given back to
+   the two things it is ever wanted for — what was said, and what is being
+   typed — which is also everything a copy is ever taken from. */
+body {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 /* macOS and Windows composite real vibrancy behind the webview, so the page
    stays mostly transparent to let it through. Linux has no such API, and
    backdrop-filter cannot reach past the page into the desktop. Translucency
