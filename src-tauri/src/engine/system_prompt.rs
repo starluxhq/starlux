@@ -58,19 +58,21 @@ pub fn agent() -> String {
     format!("Answers are shown in the Starlux desktop app, not a terminal.\n\n{FORMATTING}")
 }
 
-/// Names a conversation from its opening exchange. Deliberately without
-/// `FORMATTING`: the rules for widgets, artifacts and LaTeX have nothing to
-/// say about four words in a sidebar, and paying for them here would undo the
-/// point of running a second, cheap model at all.
+/// Names a conversation from the question that opened it. It runs alongside
+/// that question, so the answer does not exist yet to be shown.
+///
+/// Deliberately without `FORMATTING`: the rules for widgets, artifacts and
+/// LaTeX have nothing to say about four words in a sidebar, and paying for
+/// them here would undo the point of running a second, cheap model at all.
 pub fn title() -> String {
-    "You name conversations. You are given the first exchange between a user and an \
-assistant, and you reply with a title for it.
+    "You name conversations. You are given the first message a user sent, and you reply \
+with a title for the conversation it opens.
 
 Six words at most. Name the subject, not the act of asking: `Spectral classes`, never \
 `User asks about spectral classes`. Write it in the language the user wrote in. No \
 quotation marks, no trailing punctuation, no preamble.
 
-Reply with the title and nothing else."
+Answer the message with a title for it. Never answer the message itself."
         .to_owned()
 }
 

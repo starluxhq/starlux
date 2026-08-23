@@ -203,6 +203,7 @@ pub async fn run_prompt(
     let conversation_id = request.conversation_id.clone();
     let provider_id = request.provider_id.clone();
     let prompt = request.prompt.clone();
+    let asked = prompt.clone();
     let agent_dir = request
         .agent_dir
         .as_ref()
@@ -224,11 +225,11 @@ pub async fn run_prompt(
     // given, and a new one records the one it arrived with.
     let id = conversation_id.clone();
     let named_by = provider_id.clone();
-    let granted = db::query(&app, move |db| {
-        db.ensure_conversation(&id, &prompt, &provider_id, agent_dir.as_deref())?;
+    let (started, granted) = db::query(&app, move |db| {
+        let started = db.ensure_conversation(&id, &prompt, &provider_id, agent_dir.as_deref())?;
         db.set_setting(db::ACTIVE_CONVERSATION, Some(&id))?;
         db.add_message(&id, &question)?;
-        db.agent_dir(&id)
+        Ok((started, db.agent_dir(&id)?))
     })
     .await?;
     request.agent_dir = granted.map(PathBuf::from);
@@ -244,15 +245,21 @@ pub async fn run_prompt(
         conversation_id.clone(),
         request.model.clone(),
     );
-    let outcome = cli::run(app.clone(), request, sink).await;
 
-    // Offered after every run rather than only the first: a conversation whose
-    // opening run failed would otherwise keep the first line typed into it
-    // forever. Whether this exchange is the one to name is the task's to judge.
-    if outcome.is_ok() {
-        tauri::async_runtime::spawn(title::name_conversation(app, named_by, conversation_id));
+    // Sent alongside the question rather than after the answer, so the written
+    // title lands while the first answer is still streaming. Only the run that
+    // opened the conversation names it: a follow-up is not a reason to retitle
+    // a thread the user has been reading.
+    if started {
+        tauri::async_runtime::spawn(title::name_conversation(
+            app.clone(),
+            named_by,
+            conversation_id,
+            asked,
+        ));
     }
-    outcome
+
+    cli::run(app, request, sink).await
 }
 
 #[tauri::command]

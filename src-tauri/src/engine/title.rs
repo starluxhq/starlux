@@ -1,10 +1,13 @@
 //! A second, cheap run whose whole job is to name the conversation.
 //!
-//! The first-line title lands the moment a question is asked, so the sidebar is
-//! never blank; this replaces it a few seconds later with something written
-//! rather than transcribed. It is deliberately not `cli::run`: that needs an
-//! `ipc::Channel` to stream into, and its `Sink` would persist the title as an
-//! assistant message in the thread it is naming.
+//! It goes out alongside the question rather than after the answer, so the
+//! written title arrives while the first answer is still streaming instead of
+//! a beat behind it. That is what decides what the namer is shown: the
+//! question alone, because at that moment there is nothing else.
+//!
+//! Deliberately not `cli::run`: that needs an `ipc::Channel` to stream into,
+//! and its `Sink` would persist the title as an assistant message in the
+//! thread it is naming.
 
 use std::process::Stdio;
 use std::time::Duration;
@@ -20,16 +23,17 @@ use crate::db;
 /// not left holding a process for the rest of the session.
 const TIMEOUT: Duration = Duration::from_secs(60);
 
-/// How much of each side the namer is shown. A title needs the subject, not
-/// the whole answer, and the point of this run is that it is cheap.
+/// How much of the question the namer is shown. A title needs the subject, not
+/// every word of it, and the point of this run is that it is cheap.
 const EXCERPT_CHARS: usize = 600;
 
 pub async fn name_conversation(
     app: tauri::AppHandle,
     provider_id: String,
     conversation_id: String,
+    question: String,
 ) {
-    match write_title(&app, &provider_id, &conversation_id).await {
+    match write_title(&app, &provider_id, &conversation_id, &question).await {
         Ok(Some(title)) => log::info!("named conversation {conversation_id}: {title}"),
         Ok(None) => {}
         // Never surfaced: the conversation already has a serviceable title, and
@@ -42,37 +46,13 @@ async fn write_title(
     app: &tauri::AppHandle,
     provider_id: &str,
     conversation_id: &str,
+    question: &str,
 ) -> Result<Option<String>, String> {
     let Some(adapter) = adapters::for_provider(provider_id) else {
         return Ok(None);
     };
 
-    let id = conversation_id.to_owned();
-    let Some(thread) = db::query(app, move |db| db.thread(&id)).await? else {
-        return Ok(None);
-    };
-
-    // Only the opening exchange is named. A second answer means the user has
-    // been reading this thread under a title, and renaming it under them is
-    // worse than the first line they typed.
-    let mut answers = thread
-        .messages
-        .iter()
-        .filter(|m| m.role == "assistant" && m.error.is_none());
-    let (Some(answer), None) = (answers.next(), answers.next()) else {
-        return Ok(None);
-    };
-    let Some(question) = thread.messages.iter().find(|m| m.role == "user") else {
-        return Ok(None);
-    };
-
-    let exchange = format!(
-        "Question:\n{}\n\nAnswer:\n{}",
-        excerpt(&question.text),
-        excerpt(&answer.text)
-    );
-
-    let Some(title) = clean(&run(adapter.title_invocation(&exchange)).await?) else {
+    let Some(title) = clean(&run(adapter.title_invocation(&excerpt(question))).await?) else {
         return Ok(None);
     };
 

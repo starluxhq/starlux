@@ -134,10 +134,11 @@ pub struct ParseState {
 pub trait CliAdapter: Send + Sync {
     fn invocation(&self, req: &RunRequest) -> Invocation;
 
-    /// A one-shot run that reads an exchange and answers with a name for it.
-    /// On the trait rather than inside the Claude adapter so the next provider
-    /// gets titles by writing its own argv, not by being special-cased.
-    fn title_invocation(&self, exchange: &str) -> Invocation;
+    /// A one-shot run that reads the opening question and answers with a name
+    /// for the conversation. On the trait rather than inside the Claude adapter
+    /// so the next provider gets titles by writing its own argv, not by being
+    /// special-cased.
+    fn title_invocation(&self, question: &str) -> Invocation;
 
     fn parse_line(&self, line: &str, state: &mut ParseState, req: &RunRequest) -> Vec<StreamEvent>;
 }
