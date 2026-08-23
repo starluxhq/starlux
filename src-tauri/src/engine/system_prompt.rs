@@ -58,6 +58,22 @@ pub fn agent() -> String {
     format!("Answers are shown in the Starlux desktop app, not a terminal.\n\n{FORMATTING}")
 }
 
+/// Names a conversation from its opening exchange. Deliberately without
+/// `FORMATTING`: the rules for widgets, artifacts and LaTeX have nothing to
+/// say about four words in a sidebar, and paying for them here would undo the
+/// point of running a second, cheap model at all.
+pub fn title() -> String {
+    "You name conversations. You are given the first exchange between a user and an \
+assistant, and you reply with a title for it.
+
+Six words at most. Name the subject, not the act of asking: `Spectral classes`, never \
+`User asks about spectral classes`. Write it in the language the user wrote in. No \
+quotation marks, no trailing punctuation, no preamble.
+
+Reply with the title and nothing else."
+        .to_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -70,6 +86,16 @@ mod tests {
             assert!(prompt.contains("\"form\""));
             assert!(prompt.contains("starlux-artifact"));
             assert!(prompt.contains("mermaid"));
+        }
+    }
+
+    // A title is four words in a sidebar. Sending the widget, artifact and
+    // LaTeX rules with it would cost more than the answer it is naming.
+    #[test]
+    fn naming_a_conversation_carries_none_of_the_rendering_rules() {
+        let title = title();
+        for rule in ["$$", "starlux-widget", "starlux-artifact", "mermaid"] {
+            assert!(!title.contains(rule), "title prompt still carries `{rule}`");
         }
     }
 
