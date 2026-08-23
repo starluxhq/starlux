@@ -193,6 +193,16 @@ pub async fn set_agent_dir(app: AppHandle, id: String, dir: Option<String>) -> R
     Ok(())
 }
 
+/// Lets a conversation's runs reach the network, or takes it back. Stored
+/// beside the folder and read back the same way, so neither window can spend a
+/// grant the other revoked.
+#[tauri::command]
+pub async fn set_web(app: AppHandle, id: String, web: bool) -> Result<(), String> {
+    db::query(&app, move |db| db.set_web(&id, web)).await?;
+    let _ = app.emit(db::CHANGED_EVENT, ());
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn run_prompt(
     app: AppHandle,
@@ -224,19 +234,22 @@ pub async fn run_prompt(
     // Written before the process starts, so a run that dies still leaves the
     // question in history rather than a conversation that never happened.
     //
-    // The stored folder comes back out because it, not the request, decides
-    // what this run may touch: an existing conversation keeps the grant it was
-    // given, and a new one records the one it arrived with.
+    // The stored grant comes back out because it, not the request, decides what
+    // this run may reach: an existing conversation keeps the grant it was given,
+    // and a new one records the one it arrived with.
     let id = conversation_id.clone();
     let named_by = provider_id.clone();
+    let web = request.web;
     let (started, granted) = db::query(&app, move |db| {
-        let started = db.ensure_conversation(&id, &prompt, &provider_id, agent_dir.as_deref())?;
+        let started =
+            db.ensure_conversation(&id, &prompt, &provider_id, agent_dir.as_deref(), web)?;
         db.set_setting(db::ACTIVE_CONVERSATION, Some(&id))?;
         db.add_message(&id, &question)?;
-        Ok((started, db.agent_dir(&id)?))
+        Ok((started, db.grant(&id)?))
     })
     .await?;
-    request.agent_dir = granted.map(PathBuf::from);
+    request.agent_dir = granted.0.map(PathBuf::from);
+    request.web = granted.1;
     let _ = app.emit(db::CHANGED_EVENT, ());
 
     app.state::<AppState>()

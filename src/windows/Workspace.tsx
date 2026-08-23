@@ -43,6 +43,8 @@ export default function Workspace() {
     newConversation,
     selectModel,
     setAgentDir,
+    web,
+    setWeb,
     send,
     retry,
     edit,
@@ -155,8 +157,10 @@ export default function Workspace() {
         <div className="ml-auto flex min-w-0 items-center gap-4">
           <AgentMode
             dir={agentDir}
+            web={web}
             onPick={() => void pickFolder()}
             onClear={() => void setAgentDir(null)}
+            onWeb={(on) => void setWeb(on)}
           />
           {platform === "macos" ? null : <WindowControls />}
         </div>

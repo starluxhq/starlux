@@ -57,6 +57,7 @@ export interface RunRequest {
   sessionId?: string | null;
   model?: string | null;
   agentDir?: string | null;
+  web?: boolean;
   attachments?: string[];
 }
 
@@ -67,6 +68,8 @@ export interface Conversation {
   sessionId: string | null;
   model: string | null;
   agentDir: string | null;
+  /** Whether runs may reach the network. Independent of `agentDir`. */
+  web: boolean;
   updatedAt: number;
   pinned: boolean;
 }

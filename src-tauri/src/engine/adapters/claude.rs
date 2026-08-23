@@ -6,6 +6,10 @@ use crate::engine::{
     StreamEvent, Usage,
 };
 
+/// Named exactly, not by category: an allowlist that grew with the provider
+/// would hand over whatever it added next.
+const WEB_TOOLS: [&str; 2] = ["WebSearch", "WebFetch"];
+
 /// Namespaced so a user's own agent of the same name is never the one that runs.
 const CHAT_AGENT: &str = "starlux-chat";
 const TITLE_AGENT: &str = "starlux-title";
@@ -50,10 +54,15 @@ impl CliAdapter for ClaudeAdapter {
         // Its prompt also replaces the provider's, dropping a coding-agent preamble
         // that costs around 25k input tokens a turn. Agent mode still needs that
         // preamble, so it appends instead.
+        //
+        // Two things decide what a run can do and both are needed: the agent's
+        // `tools` array is what makes a tool exist, and `--allowedTools` is what
+        // pre-approves it. Declared but unapproved, the call comes back denied —
+        // and a launcher has nowhere to show the prompt that would approve it.
         if req.agent_dir.is_none() {
             args.push("--strict-mcp-config".into());
             args.push("--agents".into());
-            args.push(chat_agent());
+            args.push(chat_agent(req.web));
             args.push("--agent".into());
             args.push(CHAT_AGENT.into());
         } else {
@@ -64,6 +73,11 @@ impl CliAdapter for ClaudeAdapter {
             // the grant; whatever the user's own CLI settings refuse still is.
             args.push("--permission-mode".into());
             args.push("acceptEdits".into());
+        }
+
+        if req.web {
+            args.push("--allowedTools".into());
+            args.extend(WEB_TOOLS.iter().map(|tool| (*tool).to_owned()));
         }
 
         // Plain text on stdin is the whole prompt when nothing is attached.
@@ -254,12 +268,12 @@ fn image_type(mime: &str) -> Option<&'static str> {
     }
 }
 
-fn chat_agent() -> String {
+fn chat_agent(web: bool) -> String {
     serde_json::json!({
         CHAT_AGENT: {
             "description": "Answers questions from the Starlux bar",
             "prompt": system_prompt::chat(),
-            "tools": [],
+            "tools": if web { WEB_TOOLS.to_vec() } else { Vec::new() },
         }
     })
     .to_string()
@@ -377,6 +391,7 @@ mod tests {
             session_id: None,
             model: None,
             agent_dir: None,
+            web: false,
             attachments: Vec::new(),
         }
     }
@@ -754,7 +769,6 @@ mod tests {
         let invocation = ClaudeAdapter.invocation(&req, &[]);
 
         assert_eq!(invocation.cwd, Some(PathBuf::from("/tmp/project")));
-        assert!(!invocation.args.iter().any(|arg| arg == "--allowed-tools"));
 
         let mode = invocation
             .args
@@ -762,6 +776,75 @@ mod tests {
             .position(|arg| arg == "--permission-mode")
             .expect("agent mode must accept edits it cannot ask about");
         assert_eq!(invocation.args[mode + 1], "acceptEdits");
+    }
+
+    fn tools_of(invocation: &Invocation) -> Value {
+        let at = invocation
+            .args
+            .iter()
+            .position(|arg| arg == "--agents")
+            .expect("chat-only runs define the agent they run as");
+        let agents: Value = serde_json::from_str(&invocation.args[at + 1]).unwrap();
+        agents[CHAT_AGENT]["tools"].clone()
+    }
+
+    fn allowlist(invocation: &Invocation) -> Option<&[String]> {
+        let at = invocation
+            .args
+            .iter()
+            .position(|arg| arg == "--allowedTools" || arg == "--allowed-tools")?;
+        Some(&invocation.args[at + 1..])
+    }
+
+    /// The tools array is what makes them exist; the flag is what pre-approves
+    /// them. Without the second the calls come back denied, and a launcher has
+    /// nowhere to show the prompt that would answer that.
+    #[test]
+    fn the_web_grant_both_declares_the_tools_and_approves_them() {
+        let mut req = request();
+        req.web = true;
+        let invocation = ClaudeAdapter.invocation(&req, &[]);
+
+        assert_eq!(tools_of(&invocation), serde_json::json!(WEB_TOOLS));
+        assert_eq!(
+            allowlist(&invocation),
+            Some(&["WebSearch".to_owned(), "WebFetch".to_owned()][..])
+        );
+        // The network is not a filesystem: the run still has neither cwd nor
+        // a tool that could reach one.
+        assert_eq!(invocation.cwd, None);
+    }
+
+    #[test]
+    fn without_the_web_grant_the_run_has_no_tools_and_approves_nothing() {
+        let invocation = ClaudeAdapter.invocation(&request(), &[]);
+        assert_eq!(tools_of(&invocation), serde_json::json!([]));
+        assert_eq!(allowlist(&invocation), None);
+    }
+
+    /// Two grants, not a ladder: opting into a folder must not silently add
+    /// the network, and adding the network must not need one.
+    #[test]
+    fn agent_mode_reaches_the_web_only_when_that_was_granted_too() {
+        let mut req = request();
+        req.agent_dir = Some(PathBuf::from("/tmp/project"));
+        assert_eq!(allowlist(&ClaudeAdapter.invocation(&req, &[])), None);
+
+        req.web = true;
+        let invocation = ClaudeAdapter.invocation(&req, &[]);
+        assert_eq!(
+            allowlist(&invocation),
+            Some(&["WebSearch".to_owned(), "WebFetch".to_owned()][..])
+        );
+        assert_eq!(invocation.cwd, Some(PathBuf::from("/tmp/project")));
+    }
+
+    /// Naming a conversation is a one-shot on the question text; nothing about
+    /// it should ever reach the network.
+    #[test]
+    fn naming_a_conversation_never_gains_the_web_grant() {
+        let invocation = ClaudeAdapter.title_invocation("what is a spectral class?");
+        assert_eq!(allowlist(&invocation), None);
     }
 
     #[test]

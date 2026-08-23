@@ -36,6 +36,7 @@ export default function QuickBar() {
     providerId,
     model,
     agentDir,
+    web,
     turns,
     status,
     runId,
@@ -218,7 +219,7 @@ export default function QuickBar() {
             marker={false}
           />
 
-          <AgentMode dir={agentDir} />
+          <AgentMode dir={agentDir} web={web} />
 
           {context ? <ContextMeter context={context} /> : null}
 

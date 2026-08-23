@@ -75,6 +75,10 @@ pub struct Conversation {
     pub session_id: Option<String>,
     pub model: Option<String>,
     pub agent_dir: Option<String>,
+    /// Whether the provider's web tools are on. Independent of `agent_dir`:
+    /// looking something up is not a reason to hand over a folder, and opting
+    /// into a folder is not a reason to silently gain the network.
+    pub web: bool,
     pub updated_at: i64,
     pub pinned: bool,
 }
@@ -124,15 +128,23 @@ impl Db {
         title_source: &str,
         provider_id: &str,
         agent_dir: Option<&str>,
+        web: bool,
     ) -> rusqlite::Result<bool> {
         let conn = self.0.lock().unwrap();
         let now = now_ms();
         let changed = conn.execute(
             "INSERT INTO conversations
-               (id, title, provider_id, agent_dir, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?5)
+               (id, title, provider_id, agent_dir, web, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
              ON CONFLICT(id) DO NOTHING",
-            params![id, title_from(title_source), provider_id, agent_dir, now],
+            params![
+                id,
+                title_from(title_source),
+                provider_id,
+                agent_dir,
+                web,
+                now
+            ],
         )?;
         Ok(changed == 1)
     }
@@ -236,22 +248,36 @@ impl Db {
         Ok(())
     }
 
-    pub fn agent_dir(&self, id: &str) -> rusqlite::Result<Option<String>> {
+    /// The other half of the grant. Off by default and stored the same way, so
+    /// what a run may reach is read back rather than taken from the window.
+    pub fn set_web(&self, id: &str, web: bool) -> rusqlite::Result<()> {
         let conn = self.0.lock().unwrap();
-        conn.query_row(
-            "SELECT agent_dir FROM conversations WHERE id = ?1",
-            params![id],
-            |row| row.get(0),
-        )
-        .optional()
-        .map(Option::flatten)
+        conn.execute(
+            "UPDATE conversations SET web = ?2 WHERE id = ?1",
+            params![id, web],
+        )?;
+        Ok(())
+    }
+
+    /// Both halves in one read, because a run needs both and asking twice
+    /// leaves room for them to disagree.
+    pub fn grant(&self, id: &str) -> rusqlite::Result<(Option<String>, bool)> {
+        let conn = self.0.lock().unwrap();
+        Ok(conn
+            .query_row(
+                "SELECT agent_dir, web FROM conversations WHERE id = ?1",
+                params![id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?
+            .unwrap_or((None, false)))
     }
 
     pub fn list_conversations(&self) -> rusqlite::Result<Vec<Conversation>> {
         let conn = self.0.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, title, provider_id, provider_session_id, model, agent_dir, updated_at,
-                    pinned
+            "SELECT id, title, provider_id, provider_session_id, model, agent_dir, web,
+                    updated_at, pinned
                FROM conversations
               ORDER BY pinned DESC, updated_at DESC",
         )?;
@@ -263,8 +289,8 @@ impl Db {
         let conn = self.0.lock().unwrap();
         let conversation = conn
             .query_row(
-                "SELECT id, title, provider_id, provider_session_id, model, agent_dir, updated_at,
-                    pinned
+                "SELECT id, title, provider_id, provider_session_id, model, agent_dir, web,
+                    updated_at, pinned
                    FROM conversations WHERE id = ?1",
                 params![conversation_id],
                 read_conversation,
@@ -394,6 +420,12 @@ ALTER TABLE messages ADD COLUMN context_used INTEGER;
 ALTER TABLE messages ADD COLUMN context_window INTEGER;
 ";
 
+/// Conversations that existed before the grant was split keep the answer the
+/// old binary would have given: chat-only, or a folder, and no web either way.
+const SCHEMA_V3: &str = "
+ALTER TABLE conversations ADD COLUMN web INTEGER NOT NULL DEFAULT 0;
+";
+
 fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     let tx = conn.transaction()?;
     let version: i64 = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
@@ -404,6 +436,10 @@ fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     if version < 2 {
         tx.execute_batch(SCHEMA_V2)?;
         tx.pragma_update(None, "user_version", 2)?;
+    }
+    if version < 3 {
+        tx.execute_batch(SCHEMA_V3)?;
+        tx.pragma_update(None, "user_version", 3)?;
     }
     tx.commit()
 }
@@ -416,8 +452,9 @@ fn read_conversation(row: &rusqlite::Row<'_>) -> rusqlite::Result<Conversation> 
         session_id: row.get(3)?,
         model: row.get(4)?,
         agent_dir: row.get(5)?,
-        updated_at: row.get(6)?,
-        pinned: row.get(7)?,
+        web: row.get(6)?,
+        updated_at: row.get(7)?,
+        pinned: row.get(8)?,
     })
 }
 
@@ -549,7 +586,7 @@ mod tests {
     fn stores_and_reads_back_a_thread() {
         let db = db();
         assert!(db
-            .ensure_conversation("c1", "How do pulsars work?", "claude-cli", None)
+            .ensure_conversation("c1", "How do pulsars work?", "claude-cli", None, false)
             .unwrap());
         db.add_message("c1", &message("r1:u", "user", "How do pulsars work?"))
             .unwrap();
@@ -589,7 +626,7 @@ mod tests {
     #[test]
     fn an_answer_stored_without_a_context_reading_reports_none() {
         let db = db();
-        db.ensure_conversation("c1", "q", "claude-cli", None)
+        db.ensure_conversation("c1", "q", "claude-cli", None, false)
             .unwrap();
         db.add_message(
             "c1",
@@ -651,7 +688,7 @@ mod tests {
     #[test]
     fn a_question_keeps_the_files_that_were_asked_alongside_it() {
         let db = db();
-        db.ensure_conversation("c1", "what is this?", "claude-cli", None)
+        db.ensure_conversation("c1", "what is this?", "claude-cli", None, false)
             .unwrap();
         db.add_message(
             "c1",
@@ -679,7 +716,7 @@ mod tests {
     #[test]
     fn rewriting_a_question_replaces_what_was_attached_to_it() {
         let db = db();
-        db.ensure_conversation("c1", "hi", "claude-cli", None)
+        db.ensure_conversation("c1", "hi", "claude-cli", None, false)
             .unwrap();
         db.add_message(
             "c1",
@@ -706,7 +743,7 @@ mod tests {
     #[test]
     fn truncating_takes_the_attachments_of_the_dropped_turns() {
         let db = db();
-        db.ensure_conversation("c1", "hi", "claude-cli", None)
+        db.ensure_conversation("c1", "hi", "claude-cli", None, false)
             .unwrap();
         for id in ["r1:u", "r1", "r2:u"] {
             db.add_message(
@@ -728,14 +765,37 @@ mod tests {
         assert_eq!(orphans, 2);
     }
 
+    /// A conversation that existed before the grant was split keeps the answer
+    /// the old binary would have given, which is no network.
+    #[test]
+    fn a_database_written_before_the_split_reads_as_chat_only() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        {
+            let tx = conn.transaction().unwrap();
+            tx.execute_batch(SCHEMA_V1).unwrap();
+            tx.execute_batch(SCHEMA_V2).unwrap();
+            tx.pragma_update(None, "user_version", 2).unwrap();
+            tx.execute(
+                "INSERT INTO conversations (id, title, provider_id, agent_dir, created_at, updated_at)
+                 VALUES ('c1', 'old', 'claude-cli', '/work', 1, 1)",
+                [],
+            )
+            .unwrap();
+            tx.commit().unwrap();
+        }
+
+        let db = Db::init(conn).unwrap();
+        assert_eq!(db.grant("c1").unwrap(), (Some("/work".to_owned()), false));
+    }
+
     #[test]
     fn ensure_conversation_is_idempotent() {
         let db = db();
         assert!(db
-            .ensure_conversation("c1", "first", "claude-cli", None)
+            .ensure_conversation("c1", "first", "claude-cli", None, false)
             .unwrap());
         assert!(!db
-            .ensure_conversation("c1", "second", "claude-cli", None)
+            .ensure_conversation("c1", "second", "claude-cli", None, false)
             .unwrap());
         assert_eq!(db.list_conversations().unwrap().len(), 1);
         assert_eq!(
@@ -747,7 +807,7 @@ mod tests {
     #[test]
     fn resuming_a_conversation_recovers_its_provider_session() {
         let db = db();
-        db.ensure_conversation("c1", "hi", "claude-cli", None)
+        db.ensure_conversation("c1", "hi", "claude-cli", None, false)
             .unwrap();
         db.set_session("c1", "sess-42", Some("sonnet")).unwrap();
         let thread = db.thread("c1").unwrap().unwrap();
@@ -758,7 +818,7 @@ mod tests {
     #[test]
     fn a_streamed_answer_can_be_rewritten_in_place() {
         let db = db();
-        db.ensure_conversation("c1", "hi", "claude-cli", None)
+        db.ensure_conversation("c1", "hi", "claude-cli", None, false)
             .unwrap();
         db.add_message("c1", &message("r1", "assistant", "partial"))
             .unwrap();
@@ -772,14 +832,34 @@ mod tests {
     #[test]
     fn a_conversation_is_pinned_to_a_folder_and_can_be_released() {
         let db = db();
-        db.ensure_conversation("c1", "hi", "claude-cli", Some("/work"))
+        db.ensure_conversation("c1", "hi", "claude-cli", Some("/work"), false)
             .unwrap();
-        assert_eq!(db.agent_dir("c1").unwrap().as_deref(), Some("/work"));
+        assert_eq!(db.grant("c1").unwrap().0.as_deref(), Some("/work"));
         db.set_agent_dir("c1", Some("/elsewhere")).unwrap();
-        assert_eq!(db.agent_dir("c1").unwrap().as_deref(), Some("/elsewhere"));
+        assert_eq!(db.grant("c1").unwrap().0.as_deref(), Some("/elsewhere"));
         db.set_agent_dir("c1", None).unwrap();
-        assert_eq!(db.agent_dir("c1").unwrap(), None);
-        assert_eq!(db.agent_dir("nobody").unwrap(), None);
+        assert_eq!(db.grant("c1").unwrap().0, None);
+        assert_eq!(db.grant("nobody").unwrap(), (None, false));
+    }
+
+    /// Neither half of the grant implies the other: a folder must not quietly
+    /// buy the network, and the network must not need a folder.
+    #[test]
+    fn the_web_grant_moves_without_the_folder_and_the_folder_without_it() {
+        let db = db();
+        db.ensure_conversation("c1", "hi", "claude-cli", None, true)
+            .unwrap();
+        assert_eq!(db.grant("c1").unwrap(), (None, true));
+
+        db.set_agent_dir("c1", Some("/work")).unwrap();
+        assert_eq!(db.grant("c1").unwrap(), (Some("/work".to_owned()), true));
+
+        db.set_web("c1", false).unwrap();
+        assert_eq!(db.grant("c1").unwrap(), (Some("/work".to_owned()), false));
+
+        assert!(!db.thread("c1").unwrap().unwrap().conversation.web);
+        db.set_web("c1", true).unwrap();
+        assert!(db.list_conversations().unwrap()[0].web);
     }
 
     #[test]
@@ -791,7 +871,7 @@ mod tests {
 
         // A run reports the exact build it used against the conversation. That
         // must not disturb the alias the picker offers and the next run sends.
-        db.ensure_conversation("c1", "hello", "claude-cli", None)
+        db.ensure_conversation("c1", "hello", "claude-cli", None, false)
             .unwrap();
         db.set_session("c1", "s1", Some("claude-opus-5-20260101"))
             .unwrap();
@@ -879,7 +959,7 @@ mod tests {
     #[test]
     fn deleting_a_conversation_takes_its_messages_with_it() {
         let db = db();
-        db.ensure_conversation("c1", "hi", "claude-cli", None)
+        db.ensure_conversation("c1", "hi", "claude-cli", None, false)
             .unwrap();
         db.add_message("c1", &message("r1:u", "user", "hi"))
             .unwrap();
@@ -896,9 +976,9 @@ mod tests {
     #[test]
     fn newest_conversation_is_listed_first() {
         let db = db();
-        db.ensure_conversation("c1", "older", "claude-cli", None)
+        db.ensure_conversation("c1", "older", "claude-cli", None, false)
             .unwrap();
-        db.ensure_conversation("c2", "newer", "claude-cli", None)
+        db.ensure_conversation("c2", "newer", "claude-cli", None, false)
             .unwrap();
         std::thread::sleep(std::time::Duration::from_millis(2));
         db.add_message("c1", &message("r1:u", "user", "bump"))
@@ -915,7 +995,7 @@ mod tests {
     #[test]
     fn truncating_keeps_the_message_it_was_given_and_everything_before_it() {
         let db = db();
-        db.ensure_conversation("c1", "hi", "claude-cli", None)
+        db.ensure_conversation("c1", "hi", "claude-cli", None, false)
             .unwrap();
         for id in ["r1:u", "r1", "r2:u", "r2"] {
             db.add_message("c1", &message(id, "user", id)).unwrap();
@@ -939,7 +1019,7 @@ mod tests {
     #[test]
     fn truncating_separates_messages_written_in_the_same_millisecond() {
         let db = db();
-        db.ensure_conversation("c1", "hi", "claude-cli", None)
+        db.ensure_conversation("c1", "hi", "claude-cli", None, false)
             .unwrap();
         for id in ["a", "b", "c"] {
             db.add_message("c1", &message(id, "user", id)).unwrap();
@@ -960,10 +1040,10 @@ mod tests {
     #[test]
     fn a_pinned_conversation_outranks_a_newer_one() {
         let db = db();
-        db.ensure_conversation("old", "older", "claude-cli", None)
+        db.ensure_conversation("old", "older", "claude-cli", None, false)
             .unwrap();
         std::thread::sleep(std::time::Duration::from_millis(2));
-        db.ensure_conversation("new", "newer", "claude-cli", None)
+        db.ensure_conversation("new", "newer", "claude-cli", None, false)
             .unwrap();
         assert_eq!(listed(&db), ["new", "old"]);
 

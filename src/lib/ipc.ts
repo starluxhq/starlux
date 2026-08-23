@@ -35,9 +35,11 @@ export const listConversations = () => invoke<Conversation[]>("list_conversation
 export const loadConversation = (id: string) => invoke<Thread | null>("load_conversation", { id });
 export const deleteConversation = (id: string) => invoke<void>("delete_conversation", { id });
 
-/** `null` returns the conversation to chat-only. */
+/** `null` takes the folder back. The web grant is separate and unaffected. */
 export const setAgentDir = (id: string, dir: string | null) =>
   invoke<void>("set_agent_dir", { id, dir });
+
+export const setWeb = (id: string, web: boolean) => invoke<void>("set_web", { id, web });
 
 export const renameConversation = (id: string, title: string) =>
   invoke<void>("rename_conversation", { id, title });
