@@ -270,6 +270,20 @@ impl Db {
         }))
     }
 
+    /// Drops everything that follows one message, which is what makes editing a
+    /// question or retrying an answer a rewrite rather than an append. Ordered
+    /// the way `thread` reads, so what is deleted is what was shown below it.
+    pub fn truncate_after(&self, conversation_id: &str, message_id: &str) -> rusqlite::Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "DELETE FROM messages
+              WHERE conversation_id = ?1
+                AND (created_at, rowid) > (SELECT created_at, rowid FROM messages WHERE id = ?2)",
+            params![conversation_id, message_id],
+        )?;
+        Ok(())
+    }
+
     pub fn set_setting(&self, key: &str, value: Option<&str>) -> rusqlite::Result<()> {
         let conn = self.0.lock().unwrap();
         match value {
@@ -755,6 +769,51 @@ mod tests {
             .map(|c| c.id)
             .collect();
         assert_eq!(ids, ["c1", "c2"]);
+    }
+
+    #[test]
+    fn truncating_keeps_the_message_it_was_given_and_everything_before_it() {
+        let db = db();
+        db.ensure_conversation("c1", "hi", "claude-cli", None)
+            .unwrap();
+        for id in ["r1:u", "r1", "r2:u", "r2"] {
+            db.add_message("c1", &message(id, "user", id)).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+
+        db.truncate_after("c1", "r1").unwrap();
+        let left: Vec<_> = db
+            .thread("c1")
+            .unwrap()
+            .unwrap()
+            .messages
+            .into_iter()
+            .map(|m| m.id)
+            .collect();
+        assert_eq!(left, ["r1:u", "r1"]);
+    }
+
+    // Two messages written in the same millisecond are still ordered, so a
+    // truncate that fell back to `created_at` alone would take one too many.
+    #[test]
+    fn truncating_separates_messages_written_in_the_same_millisecond() {
+        let db = db();
+        db.ensure_conversation("c1", "hi", "claude-cli", None)
+            .unwrap();
+        for id in ["a", "b", "c"] {
+            db.add_message("c1", &message(id, "user", id)).unwrap();
+        }
+
+        db.truncate_after("c1", "b").unwrap();
+        let left: Vec<_> = db
+            .thread("c1")
+            .unwrap()
+            .unwrap()
+            .messages
+            .into_iter()
+            .map(|m| m.id)
+            .collect();
+        assert_eq!(left, ["a", "b"]);
     }
 
     #[test]

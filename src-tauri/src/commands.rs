@@ -152,6 +152,24 @@ pub async fn delete_conversation(app: AppHandle, id: String) -> Result<(), Strin
     Ok(())
 }
 
+/// Drops every message after this one, so a retried answer or an edited
+/// question is a rewrite of the thread rather than an addition to it. The
+/// window cannot do this itself: `load_conversation` reads the thread back out
+/// of SQLite, so a client-side splice is undone the next time it is opened.
+#[tauri::command]
+pub async fn truncate_after(
+    app: AppHandle,
+    conversation_id: String,
+    message_id: String,
+) -> Result<(), String> {
+    db::query(&app, move |db| {
+        db.truncate_after(&conversation_id, &message_id)
+    })
+    .await?;
+    let _ = app.emit(db::CHANGED_EVENT, ());
+    Ok(())
+}
+
 /// Sorts a conversation above the rest, and keeps it there across restarts.
 #[tauri::command]
 pub async fn set_pinned(app: AppHandle, id: String, pinned: bool) -> Result<(), String> {

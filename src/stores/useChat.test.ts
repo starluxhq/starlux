@@ -1,6 +1,20 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { currentContext, useChat } from "./useChat";
 import type { RateLimit } from "../lib/types";
+
+const ipc = vi.hoisted(() => ({
+  truncateAfter: vi.fn(() => Promise.resolve()),
+  runPrompt: vi.fn((_request: { runId: string; prompt: string }) => Promise.resolve()),
+  cancelRun: vi.fn(() => Promise.resolve(true)),
+  listProviders: vi.fn(() => Promise.resolve([])),
+  loadConversation: vi.fn(() => Promise.resolve(null)),
+  rateLimits: vi.fn(() => Promise.resolve([])),
+  saveSelectedModel: vi.fn(),
+  selectedModel: vi.fn(() => Promise.resolve(null)),
+  setAgentDir: vi.fn(() => Promise.resolve()),
+}));
+
+vi.mock("../lib/ipc", () => ipc);
 
 const RUN = "run-1";
 
@@ -24,7 +38,15 @@ const start = () =>
   });
 
 beforeEach(() => {
-  useChat.setState({ turns: [], limits: {}, status: "idle", runId: null, sessionId: null });
+  vi.clearAllMocks();
+  useChat.setState({
+    turns: [],
+    limits: {},
+    status: "idle",
+    runId: null,
+    sessionId: null,
+    conversationId: null,
+  });
 });
 
 describe("apply", () => {
@@ -133,5 +155,67 @@ describe("currentContext", () => {
       turn("c"),
     ];
     expect(currentContext(turns)?.used).toBe(40);
+  });
+});
+
+describe("retry and edit", () => {
+  const thread = () => {
+    useChat.setState({
+      conversationId: "conv-1",
+      turns: [
+        { id: "run-1:u", role: "user", text: "hello" },
+        { id: "run-1", role: "assistant", text: "hi there" },
+        { id: "run-2:u", role: "user", text: "and again" },
+        { id: "run-2", role: "assistant", text: "still here" },
+      ],
+    });
+  };
+
+  const asked = () => {
+    const { calls } = ipc.runPrompt.mock;
+    return calls[calls.length - 1][0];
+  };
+
+  // The answer keeps its id, so the run that replaces it rewrites the row
+  // rather than adding one below the turns that were dropped.
+  it("asks the same question again under the answer's own id", async () => {
+    thread();
+    await useChat.getState().retry("run-1");
+
+    expect(ipc.truncateAfter).toHaveBeenCalledWith("conv-1", "run-1");
+    expect(asked()).toMatchObject({ runId: "run-1", prompt: "hello" });
+    expect(useChat.getState().turns.map((turn) => turn.id)).toEqual(["run-1:u", "run-1"]);
+  });
+
+  it("re-runs an edited question in the place the old one held", async () => {
+    thread();
+    await useChat.getState().edit("run-1:u", "  ask it differently  ");
+
+    expect(ipc.truncateAfter).toHaveBeenCalledWith("conv-1", "run-1:u");
+    expect(asked()).toMatchObject({ runId: "run-1", prompt: "ask it differently" });
+    const { turns } = useChat.getState();
+    expect(turns.map((turn) => turn.id)).toEqual(["run-1:u", "run-1"]);
+    expect(turns[0].text).toBe("ask it differently");
+  });
+
+  it("leaves the thread alone when there is nothing to act on", async () => {
+    thread();
+    await useChat.getState().edit("run-1:u", "   ");
+    await useChat.getState().retry("nobody");
+
+    expect(ipc.truncateAfter).not.toHaveBeenCalled();
+    expect(ipc.runPrompt).not.toHaveBeenCalled();
+    expect(useChat.getState().turns).toHaveLength(4);
+  });
+
+  // `send` refuses to start a second run while one is going, so a retry that
+  // did not cancel first would simply do nothing.
+  it("stops a run still going before starting the replacement", async () => {
+    thread();
+    useChat.setState({ status: "streaming", runId: "run-2" });
+    await useChat.getState().retry("run-1");
+
+    expect(ipc.cancelRun).toHaveBeenCalledWith("run-2");
+    expect(ipc.runPrompt).toHaveBeenCalledOnce();
   });
 });
