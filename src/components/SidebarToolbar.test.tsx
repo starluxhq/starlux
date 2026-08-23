@@ -1,6 +1,19 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import SidebarToolbar from "./SidebarToolbar";
+
+/** The toolbar as the Workspace drives it: collapsing is its own doing. */
+function Toolbar({ onNew = vi.fn() }: { onNew?: () => void }) {
+  const [collapsed, setCollapsed] = useState(false);
+  return (
+    <SidebarToolbar
+      collapsed={collapsed}
+      onNew={onNew}
+      onToggle={() => setCollapsed((was) => !was)}
+    />
+  );
+}
 
 describe("SidebarToolbar", () => {
   it("names both icons, which carry no text of their own", () => {
@@ -35,5 +48,23 @@ describe("SidebarToolbar", () => {
 
     fireEvent.click(screen.getByLabelText("Hide conversations"));
     expect(onToggle).toHaveBeenCalledOnce();
+  });
+
+  // The buttons trade places when the row becomes a column. Reusing one
+  // element in the other's role is what left the new-conversation button
+  // wearing the hover from the button that was actually clicked.
+  it("rebuilds its buttons rather than swapping them into each other's place", () => {
+    render(<Toolbar />);
+    const before = [screen.getByLabelText("New conversation"), screen.getByLabelText("Hide conversations")];
+
+    fireEvent.click(screen.getByLabelText("Hide conversations"));
+    expect(before).not.toContain(screen.getByLabelText("New conversation"));
+    expect(before).not.toContain(screen.getByLabelText("Show conversations"));
+  });
+
+  it("puts focus back on the button that was pressed", () => {
+    render(<Toolbar />);
+    fireEvent.click(screen.getByLabelText("Hide conversations"));
+    expect(document.activeElement).toBe(screen.getByLabelText("Show conversations"));
   });
 });
