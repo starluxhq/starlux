@@ -30,7 +30,11 @@ export default function TurnActions({ onCopy, onEdit, onRetry }: TurnActionsProp
   }, [copied]);
 
   return (
-    <div className="mt-1 hidden gap-0.5 group-hover:flex group-focus-within:flex">
+    <div
+      // Always occupying its row, so a turn does not shift under the pointer
+      // the moment it is hovered. Faded rather than hidden for the same reason.
+      className="mt-1 flex h-6 gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+    >
       {onEdit ? (
         <button type="button" onClick={onEdit} aria-label="Edit" className={BUTTON}>
           <svg viewBox="0 0 16 16" aria-hidden className="size-3">

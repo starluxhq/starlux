@@ -4,6 +4,7 @@ import { railState } from "../lib/turn";
 import type { Status, Turn as ChatTurn } from "../stores/useChat";
 import Answer from "./Answer";
 import Composer from "./Composer";
+import ContextMenu from "./ContextMenu";
 import Question from "./Question";
 import Rail from "./Rail";
 import TurnActions from "./TurnActions";
@@ -20,7 +21,27 @@ interface TurnProps {
 
 export default function Turn({ turn, status, runId, dense = false, onRetry, onEdit }: TurnProps) {
   const [draft, setDraft] = useState<string | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; text: string } | null>(null);
   const streaming = turn.id === runId && status === "streaming";
+  const spoken = turn.text || turn.error || "";
+
+  // What is selected wins, even where the selection runs past this turn into
+  // the ones around it — that is the copy the user marked out. Taken as the
+  // menu opens, before clicking an item can disturb it.
+  const openMenu = (event: React.MouseEvent) => {
+    const selected = window.getSelection()?.toString().trim() ?? "";
+    const text = selected || spoken;
+    if (text) setMenu({ x: event.clientX, y: event.clientY, text });
+  };
+
+  const copyMenu = menu ? (
+    <ContextMenu
+      x={menu.x}
+      y={menu.y}
+      onClose={() => setMenu(null)}
+      items={[{ label: "Copy", onSelect: () => void copyText(menu.text) }]}
+    />
+  ) : null;
 
   if (turn.role === "user") {
     if (draft !== null) {
@@ -52,26 +73,28 @@ export default function Turn({ turn, status, runId, dense = false, onRetry, onEd
     }
 
     return (
-      <div className="group">
+      <div className="group" onContextMenu={openMenu}>
         <Question text={turn.text} />
         <div className="flex justify-end">
           <TurnActions onCopy={() => void copyText(turn.text)} onEdit={() => setDraft(turn.text)} />
         </div>
+        {copyMenu}
       </div>
     );
   }
 
   return (
-    <article className={`group flex ${dense ? "gap-3" : "gap-4"}`}>
+    <article className={`group flex ${dense ? "gap-3" : "gap-4"}`} onContextMenu={openMenu}>
       <Rail status={railState(turn, runId, status)} className={dense ? "mb-1" : "mt-1 mb-1"} />
       <div className="min-w-0 flex-1">
         <Answer turn={turn} />
-        {streaming ? null : (
-          <TurnActions
-            onCopy={turn.text ? () => void copyText(turn.text) : null}
-            onRetry={() => onRetry(turn.id)}
-          />
-        )}
+        {/* Rendered even while the answer is still arriving, so its row is
+            already reserved when there is finally something to do with it. */}
+        <TurnActions
+          onCopy={streaming || !spoken ? null : () => void copyText(spoken)}
+          onRetry={streaming ? undefined : () => onRetry(turn.id)}
+        />
+        {copyMenu}
       </div>
     </article>
   );
