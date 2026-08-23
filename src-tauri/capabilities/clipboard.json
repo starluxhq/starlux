@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "clipboard",
+  "description": "Both windows offer their own copy and paste, having taken the browser's away",
+  "windows": ["quickbar", "workspace"],
+  "permissions": ["clipboard-manager:allow-read-text", "clipboard-manager:allow-write-text"]
+}

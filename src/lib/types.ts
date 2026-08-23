@@ -51,6 +51,7 @@ export interface Conversation {
   model: string | null;
   agentDir: string | null;
   updatedAt: number;
+  pinned: boolean;
 }
 
 export interface Message {

@@ -151,6 +151,14 @@ pub async fn delete_conversation(app: AppHandle, id: String) -> Result<(), Strin
     Ok(())
 }
 
+/// Sorts a conversation above the rest, and keeps it there across restarts.
+#[tauri::command]
+pub async fn set_pinned(app: AppHandle, id: String, pinned: bool) -> Result<(), String> {
+    db::query(&app, move |db| db.set_pinned(&id, pinned)).await?;
+    let _ = app.emit(db::CHANGED_EVENT, ());
+    Ok(())
+}
+
 /// Pins a conversation's runs to a folder, or with `None` returns it to
 /// chat-only. Writing it here rather than passing it with each run is what
 /// keeps a grant revoked in one window from being spent in the other.
