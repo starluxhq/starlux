@@ -7,14 +7,12 @@ import {
   useState,
 } from "react";
 import AgentMode from "../components/AgentMode";
-import Answer from "../components/Answer";
 import Attachments, { type Attachment } from "../components/Attachments";
 import Composer from "../components/Composer";
 import ContextMeter from "../components/ContextMeter";
 import { ModelMenu, ModelTrigger } from "../components/ModelPicker";
 import ProviderHint from "../components/ProviderHint";
-import Question from "../components/Question";
-import Rail from "../components/Rail";
+import Turn from "../components/Turn";
 import { onAsk, onStream } from "../lib/events";
 import { PICKER } from "../lib/models";
 import {
@@ -23,7 +21,6 @@ import {
   setBlurHideSuppressed,
   setQuickbarHeight,
 } from "../lib/ipc";
-import { railState } from "../lib/turn";
 import { applyMirrored, currentContext, useChat } from "../stores/useChat";
 
 const THREAD_HEIGHT = 450;
@@ -42,6 +39,8 @@ export default function QuickBar() {
     status,
     runId,
     send,
+    retry,
+    edit,
     stop,
     selectModel,
     loadProviders,
@@ -177,18 +176,17 @@ export default function QuickBar() {
             ref={scroller}
             className="min-h-0 flex-1 space-y-4 overflow-y-auto border-b border-white/6 px-4 py-4"
           >
-            {turns.map((turn) =>
-              turn.role === "user" ? (
-                <Question key={turn.id} text={turn.text} />
-              ) : (
-                <article key={turn.id} className="flex gap-3">
-                  <Rail status={railState(turn, runId, status)} className="mb-1" />
-                  <div className="min-w-0 flex-1">
-                    <Answer turn={turn} />
-                  </div>
-                </article>
-              ),
-            )}
+            {turns.map((turn) => (
+              <Turn
+                key={turn.id}
+                turn={turn}
+                status={status}
+                runId={runId}
+                dense
+                onRetry={(id) => void retry(id)}
+                onEdit={(id, text) => void edit(id, text)}
+              />
+            ))}
           </div>
         ) : null}
 

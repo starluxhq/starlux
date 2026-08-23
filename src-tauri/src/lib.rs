@@ -101,6 +101,7 @@ pub fn run() {
             commands::rename_conversation,
             commands::delete_conversation,
             commands::set_pinned,
+            commands::truncate_after,
             commands::set_agent_dir,
             commands::run_prompt,
             commands::cancel_run,

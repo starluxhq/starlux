@@ -1,7 +1,6 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
 import AgentMode from "../components/AgentMode";
-import Answer from "../components/Answer";
 import ArtifactViewer from "../components/ArtifactViewer";
 import Attachments, { type Attachment } from "../components/Attachments";
 import Composer from "../components/Composer";
@@ -9,15 +8,13 @@ import ConversationList from "../components/ConversationList";
 import ContextMeter from "../components/ContextMeter";
 import { ModelMenu, ModelTrigger } from "../components/ModelPicker";
 import ProviderHint from "../components/ProviderHint";
-import Question from "../components/Question";
-import Rail from "../components/Rail";
+import Turn from "../components/Turn";
 import SidebarToolbar from "../components/SidebarToolbar";
 import WindowControls from "../components/WindowControls";
 import { PICKER } from "../lib/models";
 import { platform } from "../lib/platform";
 import { onConversationsChanged, onFocusConversation, onStream } from "../lib/events";
 import { activeConversation, saveSidebarCollapsed, sidebarCollapsed } from "../lib/ipc";
-import { railState } from "../lib/turn";
 import { useArtifact } from "../stores/useArtifact";
 import { applyMirrored, currentContext, useChat } from "../stores/useChat";
 import { useConversations } from "../stores/useConversations";
@@ -46,6 +43,8 @@ export default function Workspace() {
     selectModel,
     setAgentDir,
     send,
+    retry,
+    edit,
     stop,
   } = useChat();
   const context = currentContext(turns);
@@ -218,18 +217,16 @@ export default function Workspace() {
                 Light that left a long time ago, arriving one token at a time.
               </p>
             ) : (
-              turns.map((turn) =>
-                turn.role === "user" ? (
-                  <Question key={turn.id} text={turn.text} />
-                ) : (
-                  <article key={turn.id} className="flex gap-4">
-                    <Rail status={railState(turn, runId, status)} className="mt-1 mb-1" />
-                    <div className="min-w-0 flex-1">
-                      <Answer turn={turn} />
-                    </div>
-                  </article>
-                ),
-              )
+              turns.map((turn) => (
+                <Turn
+                  key={turn.id}
+                  turn={turn}
+                  status={status}
+                  runId={runId}
+                  onRetry={(id) => void retry(id)}
+                  onEdit={(id, text) => void edit(id, text)}
+                />
+              ))
             )}
           </div>
 

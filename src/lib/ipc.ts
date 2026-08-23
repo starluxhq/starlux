@@ -45,6 +45,11 @@ export const renameConversation = (id: string, title: string) =>
 export const setPinned = (id: string, pinned: boolean) =>
   invoke<void>("set_pinned", { id, pinned });
 
+/** Everything after this message goes, so a retry or an edit rewrites the
+ *  thread rather than adding to it. */
+export const truncateAfter = (conversationId: string, messageId: string) =>
+  invoke<void>("truncate_after", { conversationId, messageId });
+
 export const setBlurHideSuppressed = (suppressed: boolean) =>
   invoke<void>("set_blur_hide_suppressed", { suppressed });
 

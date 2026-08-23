@@ -8,6 +8,7 @@ import {
   saveSelectedModel,
   selectedModel,
   setAgentDir as saveAgentDir,
+  truncateAfter,
 } from "../lib/ipc";
 import {
   isReady,
@@ -50,11 +51,14 @@ interface ChatState {
   openConversation: (id: string) => Promise<void>;
   newConversation: () => void;
   send: (prompt: string) => Promise<void>;
+  retry: (id: string) => Promise<void>;
+  edit: (id: string, prompt: string) => Promise<void>;
   stop: () => Promise<void>;
 }
 
 /** Ids are shared with the database so a loaded thread and a live run merge. */
 const questionId = (runId: string) => `${runId}:u`;
+const runOf = (id: string) => id.replace(/:u$/, "");
 
 const upsert = (turns: Turn[], turn: Turn): Turn[] =>
   turns.some((existing) => existing.id === turn.id)
@@ -260,23 +264,61 @@ export const useChat = create<ChatState>((set, get) => ({
   send: async (prompt) => {
     const trimmed = prompt.trim();
     if (!trimmed || get().status === "streaming") return;
+    await dispatch(crypto.randomUUID(), trimmed);
+  },
 
-    const runId = crypto.randomUUID();
-    const conversationId = get().conversationId ?? crypto.randomUUID();
-    const { providerId, model, sessionId, agentDir, apply } = get();
+  // Asking again under the answer's own id. `add_message` upserts on that id
+  // without touching `created_at`, so the answer is rewritten where it stands
+  // rather than appended below the turns that came after it.
+  //
+  // The provider's session is kept. A CLI session can only be abandoned, never
+  // rewound, and abandoning it would cost the whole conversation's context —
+  // so the model still remembers the discarded exchange, and reads this as
+  // being asked to answer again.
+  retry: async (id) => {
+    const { turns, conversationId } = get();
+    const at = turns.findIndex((turn) => turn.id === id);
+    const question = turns[at - 1];
+    if (at < 1 || !conversationId || question.role !== "user") return;
 
-    apply({ kind: "start", runId, conversationId, providerId, prompt: trimmed });
+    await get().stop();
+    await truncateAfter(conversationId, id);
+    set({ turns: turns.slice(0, at + 1) });
+    await dispatch(id, question.text);
+  },
 
-    try {
-      await runPrompt(
-        { runId, conversationId, providerId, prompt: trimmed, sessionId, model, agentDir },
-        apply,
-      );
-    } catch (error) {
-      apply({ kind: "error", runId, message: String(error), stderrTail: "" });
-    }
+  // The question keeps its id too: `run_prompt` writes it as `{runId}:u`, the
+  // same id it was minted with, so a re-run rewrites it in place.
+  edit: async (id, prompt) => {
+    const trimmed = prompt.trim();
+    const { turns, conversationId } = get();
+    const at = turns.findIndex((turn) => turn.id === id);
+    if (!trimmed || at < 0 || !conversationId) return;
+
+    await get().stop();
+    await truncateAfter(conversationId, id);
+    set({ turns: turns.slice(0, at + 1) });
+    await dispatch(runOf(id), trimmed);
   },
 }));
+
+/** One run, under an id the caller chooses — new for a question just asked,
+ *  the old one for a question being asked again. */
+async function dispatch(runId: string, prompt: string) {
+  const { conversationId, providerId, model, sessionId, agentDir, apply } = useChat.getState();
+  const id = conversationId ?? crypto.randomUUID();
+
+  apply({ kind: "start", runId, conversationId: id, providerId, prompt });
+
+  try {
+    await runPrompt(
+      { runId, conversationId: id, providerId, prompt, sessionId, model, agentDir },
+      apply,
+    );
+  } catch (error) {
+    apply({ kind: "error", runId, message: String(error), stderrTail: "" });
+  }
+}
 
 /** How full the conversation is now: the most recent answer that said so. An
  *  older turn's reading is not stale, it is simply about fewer turns than the
