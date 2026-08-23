@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "react";
+
 const BUTTON =
   "flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-white/6 hover:text-ink";
 
@@ -19,10 +21,28 @@ interface SidebarToolbarProps {
  *  it and the row becomes a column, so the buttons stay on the same left edge
  *  and the new-conversation one only ever moves down a slot. */
 export default function SidebarToolbar({ collapsed, onNew, onToggle }: SidebarToolbarProps) {
-  const toggle = (
+  const toggle = useRef<HTMLButtonElement>(null);
+  const byHand = useRef(false);
+
+  // The two buttons trade places, and React would answer that by reusing each
+  // element in the other's role — carrying the hover the pointer left on the
+  // one just clicked onto the one that took its place, until the mouse moves
+  // again. The keys make it a rebuild instead, and focus is put back on the
+  // button that was pressed, which the rebuild would otherwise drop.
+  useEffect(() => {
+    if (!byHand.current) return;
+    byHand.current = false;
+    toggle.current?.focus();
+  }, [collapsed]);
+
+  const hide = (
     <button
+      ref={toggle}
       type="button"
-      onClick={onToggle}
+      onClick={() => {
+        byHand.current = true;
+        onToggle();
+      }}
       aria-label={collapsed ? "Show conversations" : "Hide conversations"}
       className={BUTTON}
     >
@@ -41,14 +61,14 @@ export default function SidebarToolbar({ collapsed, onNew, onToggle }: SidebarTo
   );
 
   return collapsed ? (
-    <div className="flex w-12 flex-col items-start gap-1 px-3 pt-3">
-      {toggle}
+    <div key="rail" className="flex w-12 flex-col items-start gap-1 px-3 pt-3">
+      {hide}
       {create}
     </div>
   ) : (
-    <div className="flex items-center justify-between px-3 pt-3">
+    <div key="row" className="flex items-center justify-between px-3 pt-3">
       {create}
-      {toggle}
+      {hide}
     </div>
   );
 }
