@@ -60,6 +60,9 @@ compiles `windows/macos.rs` or `windows/generic.rs`.
 - **The grants are independent.** A folder and the web are opted into
   separately, per conversation. Neither implies the other, and the Quick Bar
   shows both without being able to change either.
+- **A grant is written fresh, never found.** Gemini's lives in a policy file
+  rather than in argv, so `CliAdapter::prepare` writes it before every run: a
+  stale or edited file is a grant nobody made.
 - **SQLite is the source of truth.** Both windows are views over the Rust core;
   state is not handed between them, and a run reads its grant back from the
   database rather than trusting the window that asked.

@@ -125,6 +125,7 @@ pub fn run() {
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             let data_dir = app.path().app_data_dir()?;
+            engine::set_data_dir(data_dir.clone());
             let db = db::Db::open(&data_dir.join("starlux.db"))?;
             if let Ok(Some(id)) = db.setting(db::ACTIVE_CONVERSATION) {
                 app.state::<AppState>().set_active_conversation(id);

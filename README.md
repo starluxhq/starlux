@@ -42,16 +42,23 @@ instant. A tray icon is the way back to either window, and the way out.
 
 CLI agents like `claude` can read, write, and execute by default. Starlux runs them
 **chat-only**: the run declares no tools at all and no MCP servers, so a hotkey
-question has no way to reach your filesystem. An empty allowlist is not enough for
-this — it reads as "nothing further is pre-approved" rather than "no tools" — and a
-denylist only covers the tools that existed when it was written.
+question has no way to reach your filesystem or the network. An empty allowlist is
+not enough for this — it reads as "nothing further is pre-approved" rather than "no
+tools" — and a denylist only covers the tools that existed when it was written.
+Each CLI takes that instruction differently: `claude` through a session-scoped
+agent on the command line, `opencode` through a configuration handed to it in its
+environment, and `gemini` through a policy file written fresh for every run,
+because it is the one that reads files by default when run headless.
 
-Agent mode is opt-in per conversation and starts by choosing the folder it may work
-in. That folder is the grant: inside it the assistant reads and edits without
-asking, because a launcher has nowhere to put an approval prompt. Whatever your own
-CLI settings refuse is still refused. The grant is stored with the conversation
-rather than the window, so leaving agent mode takes effect on the next turn wherever
-it is asked.
+Two grants can be given, per conversation, and neither implies the other.
+**Working in a folder** is opt-in and starts by choosing that folder: inside it the
+assistant reads and edits without asking, because a launcher has nowhere to put an
+approval prompt. **Web** is a separate toggle that adds searching and fetching by
+name, so looking something up never costs a folder. Whatever your own CLI settings
+refuse is still refused, and attaching a file grants only that file. Grants are
+stored with the conversation rather than the window, so releasing one takes effect
+on the next turn wherever it is asked — and the Quick Bar shows both without being
+able to change either.
 
 [SECURITY.md](SECURITY.md) has the rest: the artifact sandbox, the content
 policies, and what to do if you find a hole in any of it.
@@ -61,8 +68,7 @@ policies, and what to do if you find a hole in any of it.
 Starlux does not have an account, and it does not want yours.
 
 Each provider is the vendor's own CLI, unmodified, run exactly as you would run
-it in a terminal: `claude` is spawned as an argv array with your prompt on
-stdin, never as a shell string. It authenticates the way it already does on your
+it in a terminal — spawned as an argv array, never as a shell string. It authenticates the way it already does on your
 machine, holds its own credential, and Starlux never reads, stores, forwards, or
 proxies it — there is no key in the app, nothing in the webview, and no request
 of ours that reaches a provider's servers.
@@ -82,7 +88,8 @@ Three things follow, and Starlux holds to all three:
   person's machine against one person's account. Starlux is not a service, does
   not sit between you and a provider, and has no server of its own.
 - **Provider names identify what is being run**, not what Starlux is. The model
-  picker lists `Claude Code` because that is the binary it spawns.
+  picker lists `Claude Code`, `Gemini CLI` and `opencode` because those are the
+  binaries it spawns.
 
 Anthropic's terms for this are at
 [code.claude.com/docs/en/legal-and-compliance](https://code.claude.com/docs/en/legal-and-compliance);

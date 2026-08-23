@@ -45,6 +45,7 @@ pub async fn run(app: tauri::AppHandle, req: RunRequest, sink: Sink) -> Result<(
     // Read once, here, rather than in each adapter: two of the three take the
     // path and one takes the bytes, and only this one can fail.
     let files = load(&req.attachments).await?;
+    adapter.prepare(&req, &files)?;
     let invocation = adapter.invocation(&req, &files);
 
     let mut command = Command::new(&invocation.program);

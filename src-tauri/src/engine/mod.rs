@@ -6,8 +6,24 @@ pub mod system_prompt;
 pub mod title;
 
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
+
+static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// Where the core keeps files it hands to a CLI — a policy a run is bounded by,
+/// say. Never the user's own configuration directories, which are theirs.
+pub fn set_data_dir(dir: PathBuf) {
+    let _ = DATA_DIR.set(dir);
+}
+
+pub fn data_dir() -> PathBuf {
+    DATA_DIR
+        .get()
+        .cloned()
+        .unwrap_or_else(|| std::env::temp_dir().join("starlux"))
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -235,6 +251,20 @@ pub trait CliAdapter: Send + Sync {
     fn title_invocation(&self, question: &str) -> Invocation;
 
     fn parse_line(&self, line: &str, state: &mut ParseState, req: &RunRequest) -> Vec<StreamEvent>;
+
+    /// Anything the provider needs on disk before it is spawned, written fresh
+    /// each time. Gemini's whole grant lives in a file it is pointed at, so a
+    /// stale or edited one must never be what a run is bounded by.
+    fn prepare(&self, _req: &RunRequest, _files: &[Loaded]) -> Result<(), String> {
+        Ok(())
+    }
+
+    /// The same, for the cheap run that names a conversation. It goes out
+    /// alongside the first question rather than after it, so it cannot wait on
+    /// that run having prepared anything.
+    fn prepare_title(&self) -> Result<(), String> {
+        Ok(())
+    }
 
     /// Called once the CLI's stdout has closed. Providers whose stream carries a
     /// final event have nothing to do here; those that simply stop talking end

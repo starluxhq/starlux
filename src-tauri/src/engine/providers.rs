@@ -54,6 +54,17 @@ const CATALOG: &[Entry] = &[
         web: true,
     },
     Entry {
+        id: "gemini-cli",
+        name: "Gemini CLI",
+        binary: "gemini",
+        login: "gemini",
+        // It has no `models` command, so this is what has been seen to answer
+        // rather than what the docs imply exists: `gemini-3-pro` is a 404.
+        // `auto` is the CLI's own router, and its default.
+        models: &["auto", "gemini-3.5-flash", "gemini-3.1-flash-lite"],
+        web: true,
+    },
+    Entry {
         id: "opencode-cli",
         name: "opencode",
         binary: "opencode",

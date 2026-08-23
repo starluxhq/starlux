@@ -40,6 +40,11 @@ fn main() {
         .collect();
 
     let adapter = adapters::for_provider(&provider).unwrap();
+    if std::env::var("TITLE").is_ok() {
+        adapter.prepare_title().unwrap();
+    } else {
+        adapter.prepare(&req, &files).unwrap();
+    }
     let invocation = if std::env::var("TITLE").is_ok() {
         adapter.title_invocation(&req.prompt)
     } else {
