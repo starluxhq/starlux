@@ -52,6 +52,7 @@ async fn write_title(
         return Ok(None);
     };
 
+    adapter.prepare_title()?;
     let printed = run(adapter.title_invocation(&excerpt(question))).await?;
     let Some(title) = clean(&adapter.title_text(&printed)) else {
         return Ok(None);
