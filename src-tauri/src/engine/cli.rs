@@ -51,7 +51,13 @@ pub async fn run(app: tauri::AppHandle, req: RunRequest, sink: Sink) -> Result<(
     command
         .args(&invocation.args)
         .envs(invocation.env.iter().cloned())
-        .stdin(Stdio::piped())
+        // Closed, not merely unwritten: opencode blocks forever on an open
+        // stdin and never reaches the model.
+        .stdin(if invocation.stdin.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
@@ -156,6 +162,13 @@ pub async fn run(app: tauri::AppHandle, req: RunRequest, sink: Sink) -> Result<(
 
     let status = child.wait().await;
     app.state::<Runs>().finish(&req.run_id);
+
+    // A provider whose stream carries no final event ends when its stdout does.
+    if !cancelled {
+        for event in adapter.finish(&mut state, &req) {
+            sink.send(event)?;
+        }
+    }
 
     if state.ended {
         return Ok(());

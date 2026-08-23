@@ -9,8 +9,10 @@ const provider = (availability: Availability): Provider => ({
   id: "claude-cli",
   name: "Claude Code",
   binary: "claude",
+  login: "opencode auth login",
   availability,
   models: ["opus", "sonnet"],
+  web: true,
 });
 
 const limit = (over: Partial<RateLimit> = {}): RateLimit => ({
@@ -72,7 +74,10 @@ describe("ModelMenu", () => {
 
     menu({ state: "signedOut" });
     expect(screen.queryByRole("button", { name: /Opus/ })).toBeNull();
-    expect(screen.getByText(/Signed out — run `claude login`/)).toBeTruthy();
+    // The command comes from the provider, not from its binary name: `opencode
+    // login` is not a command, and a launcher that guesses sends the user
+    // somewhere that does not exist.
+    expect(screen.getByText(/Signed out — run `opencode auth login`/)).toBeTruthy();
   });
 
   it("says the provider is missing rather than signed out when it is absent", () => {

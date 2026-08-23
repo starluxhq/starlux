@@ -53,10 +53,13 @@ compiles `windows/macos.rs` or `windows/generic.rs`.
 ## Architecture Rules
 
 - **Never build a shell string** for a CLI provider. Commands are argv arrays and
-  prompts go over stdin.
+  prompts go over stdin — except where a CLI hangs on an open one, as opencode
+  does, and the prompt goes in argv instead. Still an array, never a string.
 - **Chat-only is the default.** A run declares no tools and no MCP servers, so a
-  hotkey question cannot reach the filesystem. Agent mode is opt-in per
-  conversation and pinned to a folder.
+  hotkey question cannot reach the filesystem or the network.
+- **The grants are independent.** A folder and the web are opted into
+  separately, per conversation. Neither implies the other, and the Quick Bar
+  shows both without being able to change either.
 - **SQLite is the source of truth.** Both windows are views over the Rust core;
   state is not handed between them, and a run reads its grant back from the
   database rather than trusting the window that asked.

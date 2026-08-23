@@ -33,7 +33,7 @@ const STALE_AFTER = 10 * 60_000;
  *  than this app's share, so it is deliberately not phrased as Starlux's usage.
  *  There is no percentage to show: the provider reports which window and when it
  *  resets, and inventing a number from our own token counts would be a guess. */
-function SubscriptionWindow({ limit }: { limit: RateLimit }) {
+function SubscriptionWindow({ limit, provider }: { limit: RateLimit; provider: string }) {
   const resets = limit.resetsAt === null ? null : resetLabel(limit.resetsAt);
   // Past its reset, the window has already rolled over and we know nothing
   // about the one that replaced it.
@@ -45,7 +45,7 @@ function SubscriptionWindow({ limit }: { limit: RateLimit }) {
   return (
     <p
       className={`px-3 pt-1 pb-2 font-mono text-[10px] ${limited ? "text-class-m" : "text-faint"}`}
-      title={`Your ${windowLabel(limit.kind)} limit across every Claude session, not Starlux's alone`}
+      title={`Your ${windowLabel(limit.kind)} limit across every ${provider} session, not Starlux's alone`}
     >
       {limited ? `${limit.status.replace(/_/g, " ")} · ` : ""}
       {windowLabel(limit.kind)} resets {resets}
@@ -77,7 +77,7 @@ export function ModelMenu({
   return (
     <div {...{ [PICKER]: "" }} className={className}>
       <div className="ml-auto max-h-56 w-52 overflow-y-auto rounded-lg border border-rule bg-haze shadow-xl shadow-black/40">
-        {providers.map(({ id, name, binary, models, availability }) => (
+        {providers.map(({ id, name, binary, login, models, availability }) => (
           <div key={id}>
             <p className="border-b border-rule/60 px-3 py-1.5 font-mono text-[10px] tracking-wide text-faint uppercase">
               {name}
@@ -91,7 +91,7 @@ export function ModelMenu({
             {availability.state !== "ready" ? (
               <p className="px-3 py-1.5 text-[11.5px] text-faint">
                 {availability.state === "signedOut"
-                  ? `Signed out — run \`${binary} login\``
+                  ? `Signed out — run \`${login}\``
                   : `Not found — install \`${binary}\``}
               </p>
             ) : (
@@ -116,7 +116,7 @@ export function ModelMenu({
             {/* Not for a provider that cannot be run: a window it is no longer
                 inside is the one thing worse than showing nothing. */}
             {availability.state === "ready" && limits[id] ? (
-              <SubscriptionWindow limit={limits[id]} />
+              <SubscriptionWindow limit={limits[id]} provider={name} />
             ) : null}
           </div>
         ))}

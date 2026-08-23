@@ -7,15 +7,17 @@ const provider = (id: string, binary: string, availability: Availability): Provi
   id,
   name: id,
   binary,
+  login: `${binary} auth login`,
   availability,
   models: [],
+  web: true,
 });
 
 describe("ProviderHint", () => {
   it("names signing in as the fix when a provider is installed", () => {
     render(<ProviderHint providers={[provider("claude-cli", "claude", { state: "signedOut" })]} />);
     const hint = screen.getByText("signed out");
-    expect(hint.title).toContain("claude login");
+    expect(hint.title).toContain("claude auth login");
   });
 
   it("reports nothing installed when no provider is present", () => {
@@ -39,6 +41,6 @@ describe("ProviderHint", () => {
         ]}
       />,
     );
-    expect(screen.getByText("signed out").title).toContain("claude login");
+    expect(screen.getByText("signed out").title).toContain("claude auth login");
   });
 });

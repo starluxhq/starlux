@@ -10,7 +10,7 @@ export default function ProviderHint({ providers }: { providers: Provider[] }) {
     <span
       title={
         signedOut
-          ? `${signedOut.name} is installed but signed out. Run \`${signedOut.binary} login\` in a terminal.`
+          ? `${signedOut.name} is installed but signed out. Run \`${signedOut.login}\` in a terminal.`
           : "No supported CLI was found on PATH."
       }
       className="shrink-0 font-mono text-[10px] whitespace-nowrap text-class-m uppercase"

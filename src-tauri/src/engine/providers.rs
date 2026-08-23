@@ -22,16 +22,46 @@ pub struct Provider {
     pub id: &'static str,
     pub name: &'static str,
     pub binary: &'static str,
+    /// What to run to sign in, in full. `opencode login` is not a command;
+    /// `opencode auth login` is, and a launcher that guesses sends the user
+    /// somewhere that does not exist.
+    pub login: &'static str,
     pub availability: Availability,
-    pub models: &'static [&'static str],
+    pub models: Vec<String>,
+    /// Whether this provider has web tools to grant at all. With one provider
+    /// the toggle could be assumed; with two it cannot.
+    pub web: bool,
 }
 
-const CATALOG: &[(&str, &str, &str, &[&str])] = &[(
-    "claude-cli",
-    "Claude Code",
-    "claude",
-    &["opus", "sonnet", "haiku"],
-)];
+struct Entry {
+    id: &'static str,
+    name: &'static str,
+    binary: &'static str,
+    login: &'static str,
+    /// Empty where the binary is the only honest source, and the models the
+    /// user has depend on what they are signed in to.
+    models: &'static [&'static str],
+    web: bool,
+}
+
+const CATALOG: &[Entry] = &[
+    Entry {
+        id: "claude-cli",
+        name: "Claude Code",
+        binary: "claude",
+        login: "claude login",
+        models: &["opus", "sonnet", "haiku"],
+        web: true,
+    },
+    Entry {
+        id: "opencode-cli",
+        name: "opencode",
+        binary: "opencode",
+        login: "opencode auth login",
+        models: &[],
+        web: true,
+    },
+];
 
 /// Asking costs a subprocess and both windows ask on mount, but signing in from
 /// a terminal should show up without restarting the app.
@@ -61,24 +91,50 @@ pub fn invalidate() {
 }
 
 fn probe() -> Vec<Provider> {
-    CATALOG
-        .iter()
-        .map(|(id, name, binary, models)| Provider {
-            id,
-            name,
-            binary,
-            availability: availability(id, binary),
-            models,
-        })
-        .collect()
+    CATALOG.iter().map(one).collect()
 }
 
-fn availability(id: &str, binary: &str) -> Availability {
-    if which::which(binary).is_err() {
-        return Availability::Missing;
+fn one(entry: &Entry) -> Provider {
+    let missing = which::which(entry.binary).is_err();
+    let models: Vec<String> = if missing {
+        Vec::new()
+    } else {
+        available_models(entry)
+    };
+
+    Provider {
+        id: entry.id,
+        name: entry.name,
+        binary: entry.binary,
+        login: entry.login,
+        availability: if missing {
+            Availability::Missing
+        } else {
+            availability(entry, &models)
+        },
+        models,
+        web: entry.web,
     }
-    match id {
-        "claude-cli" => signed_in(binary, &["auth", "status"]),
+}
+
+fn available_models(entry: &Entry) -> Vec<String> {
+    if !entry.models.is_empty() {
+        return entry
+            .models
+            .iter()
+            .map(|model| (*model).to_owned())
+            .collect();
+    }
+    lines(entry.binary, &["models"])
+}
+
+fn availability(entry: &Entry, models: &[String]) -> Availability {
+    match entry.id {
+        "claude-cli" => signed_in(entry.binary, &["auth", "status"]),
+        // What it can run is what it is signed in to: an empty list is the
+        // same answer `auth status` gives elsewhere, from the only question
+        // this CLI answers cheaply.
+        "opencode-cli" if models.is_empty() => Availability::SignedOut,
         // Nothing to ask, so the run is what finds out.
         _ => Availability::Ready { plan: None },
     }
@@ -107,11 +163,30 @@ fn read_auth(report: &Value) -> Availability {
     }
 }
 
+/// Plain lines out, for a CLI that answers with a list rather than JSON.
+fn lines(binary: &str, args: &[&str]) -> Vec<String> {
+    output(binary, args)
+        .map(|out| {
+            String::from_utf8_lossy(&out)
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn ask(binary: &str, args: &[&str]) -> Option<Value> {
+    serde_json::from_slice(&output(binary, args)?).ok()
+}
+
+fn output(binary: &str, args: &[&str]) -> Option<Vec<u8>> {
     let mut command = Command::new(binary);
     command
         .args(args)
-        // Nothing to type at: a probe must never be what blocks the picker.
+        // Nothing to type at, and opencode blocks forever on an open stdin: a
+        // probe must never be what stalls the picker.
         .stdin(Stdio::null())
         .stderr(Stdio::null());
 
@@ -129,8 +204,7 @@ fn ask(binary: &str, args: &[&str]) -> Option<Value> {
         let _ = done.send(command.output());
     });
 
-    let output = waiting.recv_timeout(PROBE_TIMEOUT).ok()?.ok()?;
-    serde_json::from_slice(&output.stdout).ok()
+    Some(waiting.recv_timeout(PROBE_TIMEOUT).ok()?.ok()?.stdout)
 }
 
 #[cfg(test)]
