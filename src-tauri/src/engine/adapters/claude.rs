@@ -76,7 +76,7 @@ impl CliAdapter for ClaudeAdapter {
     /// Plain text out, no session in: resuming would carry the whole thread and
     /// cost exactly the tokens this run exists to avoid. No `cwd` either — it
     /// reads what it is given on stdin and has no reason to see a disk.
-    fn title_invocation(&self, exchange: &str) -> Invocation {
+    fn title_invocation(&self, question: &str) -> Invocation {
         Invocation {
             program: "claude".into(),
             args: vec![
@@ -91,7 +91,7 @@ impl CliAdapter for ClaudeAdapter {
                 "--agent".into(),
                 TITLE_AGENT.into(),
             ],
-            stdin: Some(exchange.to_owned()),
+            stdin: Some(question.to_owned()),
             cwd: None,
         }
     }
@@ -622,10 +622,13 @@ mod tests {
 
     #[test]
     fn naming_a_conversation_is_a_cheap_toolless_one_shot() {
-        let invocation = ClaudeAdapter.title_invocation("Question:\nhi\n\nAnswer:\nhello");
+        let invocation = ClaudeAdapter.title_invocation("what is a spectral class?");
         assert_eq!(invocation.program, "claude");
         assert_eq!(invocation.cwd, None);
-        assert!(invocation.stdin.unwrap().starts_with("Question:"));
+        assert_eq!(
+            invocation.stdin.as_deref(),
+            Some("what is a spectral class?")
+        );
         assert!(!invocation.args.iter().any(|arg| arg == "--bare"));
 
         let model = invocation
