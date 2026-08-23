@@ -8,7 +8,7 @@ use crate::engine::cli::{self, Runs};
 use crate::engine::providers::{self, Provider};
 use crate::engine::sink::Sink;
 use crate::engine::title;
-use crate::engine::{RateLimit, RunRequest, StreamEvent};
+use crate::engine::{self, RateLimit, RunRequest, StreamEvent};
 use crate::state::AppState;
 use crate::windows;
 
@@ -208,6 +208,7 @@ pub async fn run_prompt(
         .agent_dir
         .as_ref()
         .map(|dir| dir.to_string_lossy().into_owned());
+    let attached = request.attachments.clone();
     let question = Message {
         id: format!("{}:u", request.run_id),
         role: "user".to_owned(),
@@ -215,6 +216,9 @@ pub async fn run_prompt(
         model: None,
         usage: None,
         error: None,
+        // Described rather than read: the row is written before the run starts,
+        // and it is the run that decides whether a file it cannot open is fatal.
+        attachments: attached.iter().map(|path| engine::describe(path)).collect(),
     };
 
     // Written before the process starts, so a run that dies still leaves the

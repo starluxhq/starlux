@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { currentContext, useChat } from "./useChat";
-import type { RateLimit } from "../lib/types";
+import type { Attachment, RateLimit } from "../lib/types";
 
 const ipc = vi.hoisted(() => ({
   truncateAfter: vi.fn(() => Promise.resolve()),
-  runPrompt: vi.fn((_request: { runId: string; prompt: string }) => Promise.resolve()),
+  runPrompt: vi.fn(
+    (_request: { runId: string; prompt: string; attachments?: string[] }) => Promise.resolve(),
+  ),
   cancelRun: vi.fn(() => Promise.resolve(true)),
   listProviders: vi.fn(() => Promise.resolve([])),
   loadConversation: vi.fn(() => Promise.resolve(null)),
@@ -28,13 +30,16 @@ const limit = (over: Partial<RateLimit> = {}): RateLimit => ({
   ...over,
 });
 
-const start = () =>
+const file = (name: string): Attachment => ({ path: `/home/a/${name}`, name });
+
+const start = (attachments: Attachment[] = []) =>
   useChat.getState().apply({
     kind: "start",
     runId: RUN,
     conversationId: "conv-1",
     providerId: "claude-cli",
     prompt: "hello",
+    attachments,
   });
 
 beforeEach(() => {
@@ -61,6 +66,13 @@ describe("apply", () => {
       runId: RUN,
       conversationId: "conv-1",
     });
+  });
+
+  it("hangs what was attached on the question, not the answer", () => {
+    start([file("blue.png")]);
+    const { turns } = useChat.getState();
+    expect(turns[0].attachments).toEqual([file("blue.png")]);
+    expect(turns[1].attachments).toBeUndefined();
   });
 
   it("settles the answering turn on end", () => {
@@ -206,6 +218,38 @@ describe("retry and edit", () => {
     expect(ipc.truncateAfter).not.toHaveBeenCalled();
     expect(ipc.runPrompt).not.toHaveBeenCalled();
     expect(useChat.getState().turns).toHaveLength(4);
+  });
+
+  // A retry that quietly dropped the screenshot would be asking a different
+  // question and getting a fair answer to it.
+  it("re-sends what was attached to the question it asks again", async () => {
+    useChat.setState({
+      conversationId: "conv-1",
+      turns: [
+        { id: "run-1:u", role: "user", text: "what is this?", attachments: [file("blue.png")] },
+        { id: "run-1", role: "assistant", text: "blue" },
+      ],
+    });
+    await useChat.getState().retry("run-1");
+
+    expect(asked().attachments).toEqual(["/home/a/blue.png"]);
+    expect(useChat.getState().turns[0].attachments).toEqual([file("blue.png")]);
+  });
+
+  it("keeps the files when the question itself is rewritten", async () => {
+    useChat.setState({
+      conversationId: "conv-1",
+      turns: [
+        { id: "run-1:u", role: "user", text: "what is this?", attachments: [file("blue.png")] },
+        { id: "run-1", role: "assistant", text: "blue" },
+      ],
+    });
+    await useChat.getState().edit("run-1:u", "and what shade?");
+
+    expect(asked()).toMatchObject({
+      prompt: "and what shade?",
+      attachments: ["/home/a/blue.png"],
+    });
   });
 
   // `send` refuses to start a second run while one is going, so a retry that

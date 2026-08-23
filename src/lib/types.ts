@@ -25,8 +25,24 @@ export interface RateLimit {
   observedAt: number;
 }
 
+/** What was attached to a question — a description, never the contents. The
+ *  core reads the files itself, under its own size cap. */
+export interface Attachment {
+  path: string;
+  name: string;
+  mime?: string | null;
+  bytes?: number | null;
+}
+
 export type StreamEvent =
-  | { kind: "start"; runId: string; conversationId: string; providerId: string; prompt: string }
+  | {
+      kind: "start";
+      runId: string;
+      conversationId: string;
+      providerId: string;
+      prompt: string;
+      attachments: Attachment[];
+    }
   | { kind: "chunk"; runId: string; delta: string }
   | { kind: "meta"; runId: string; sessionId: string | null; model: string | null }
   | { kind: "end"; runId: string; text: string; sessionId: string | null; usage: Usage | null }
@@ -41,6 +57,7 @@ export interface RunRequest {
   sessionId?: string | null;
   model?: string | null;
   agentDir?: string | null;
+  attachments?: string[];
 }
 
 export interface Conversation {
@@ -61,6 +78,7 @@ export interface Message {
   model: string | null;
   usage: Usage | null;
   error: string | null;
+  attachments: Attachment[];
 }
 
 export interface Thread {

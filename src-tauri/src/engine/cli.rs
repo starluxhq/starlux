@@ -1,4 +1,5 @@
 use std::collections::{HashMap, VecDeque};
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 
@@ -7,9 +8,13 @@ use tokio::process::Command;
 use tokio::sync::oneshot;
 
 use super::sink::Sink;
-use super::{adapters, ParseState, RunRequest, StreamEvent};
+use super::{adapters, file_name, mime_of, Loaded, ParseState, RunRequest, StreamEvent};
 
 const STDERR_TAIL_LINES: usize = 20;
+
+/// Enough for a screenshot or a source file, small enough that attaching a
+/// video is refused by name rather than by a provider timing out on it.
+const MAX_ATTACHMENT_BYTES: u64 = 10 * 1024 * 1024;
 
 #[derive(Default)]
 pub struct Runs(Mutex<HashMap<String, oneshot::Sender<()>>>);
@@ -36,11 +41,16 @@ pub async fn run(app: tauri::AppHandle, req: RunRequest, sink: Sink) -> Result<(
 
     let adapter = adapters::for_provider(&req.provider_id)
         .ok_or_else(|| format!("unknown provider `{}`", req.provider_id))?;
-    let invocation = adapter.invocation(&req);
+
+    // Read once, here, rather than in each adapter: two of the three take the
+    // path and one takes the bytes, and only this one can fail.
+    let files = load(&req.attachments).await?;
+    let invocation = adapter.invocation(&req, &files);
 
     let mut command = Command::new(&invocation.program);
     command
         .args(&invocation.args)
+        .envs(invocation.env.iter().cloned())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -110,6 +120,7 @@ pub async fn run(app: tauri::AppHandle, req: RunRequest, sink: Sink) -> Result<(
         conversation_id: sink.conversation_id(),
         provider_id: req.provider_id.clone(),
         prompt: req.prompt.clone(),
+        attachments: files.iter().map(Loaded::described).collect(),
     })?;
 
     let stdout = child.stdout.take().expect("stdout piped");
@@ -173,6 +184,35 @@ pub async fn run(app: tauri::AppHandle, req: RunRequest, sink: Sink) -> Result<(
         message,
         stderr_tail: tail_text(&stderr_tail),
     })
+}
+
+/// Named in the message, because "one of your attachments is too large" sends
+/// the user back to a file picker to find out which.
+async fn load(paths: &[PathBuf]) -> Result<Vec<Loaded>, String> {
+    let mut files = Vec::with_capacity(paths.len());
+    for path in paths {
+        let name = file_name(path);
+        let size = tokio::fs::metadata(path)
+            .await
+            .map_err(|err| format!("could not read `{name}`: {err}"))?
+            .len();
+        if size > MAX_ATTACHMENT_BYTES {
+            return Err(format!(
+                "`{name}` is {} MB. Attachments are limited to {} MB.",
+                size / 1_000_000,
+                MAX_ATTACHMENT_BYTES / 1_000_000
+            ));
+        }
+        files.push(Loaded {
+            path: path.clone(),
+            mime: mime_of(path).to_owned(),
+            name,
+            data: tokio::fs::read(path)
+                .await
+                .map_err(|err| format!("could not read `{}`: {err}", path.display()))?,
+        });
+    }
+    Ok(files)
 }
 
 fn tail_text(tail: &Arc<Mutex<VecDeque<String>>>) -> String {

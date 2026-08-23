@@ -6,7 +6,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::engine::{Context, RateLimit, Usage};
+use crate::engine::{self, Attachment, Context, RateLimit, Usage};
 
 const SCHEMA_V1: &str = "
 CREATE TABLE conversations (
@@ -88,6 +88,10 @@ pub struct Message {
     pub model: Option<String>,
     pub usage: Option<Usage>,
     pub error: Option<String>,
+    /// What was attached to the question. Rewritten wholesale with the message,
+    /// so asking again under the same id re-sends the same files rather than
+    /// accumulating a second copy of them.
+    pub attachments: Vec<Attachment>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -169,6 +173,23 @@ impl Db {
                 now,
             ],
         )?;
+        conn.execute(
+            "DELETE FROM attachments WHERE message_id = ?1",
+            params![message.id],
+        )?;
+        for (at, file) in message.attachments.iter().enumerate() {
+            conn.execute(
+                "INSERT INTO attachments (id, message_id, path, mime, bytes)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    format!("{}:{at}", message.id),
+                    message.id,
+                    file.path,
+                    file.mime,
+                    file.bytes
+                ],
+            )?;
+        }
         conn.execute(
             "UPDATE conversations SET updated_at = ?2 WHERE id = ?1",
             params![conversation_id, now],
@@ -260,9 +281,26 @@ impl Db {
                FROM messages WHERE conversation_id = ?1
               ORDER BY created_at, rowid",
         )?;
-        let messages = stmt
+        let mut messages = stmt
             .query_map(params![conversation_id], read_message)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
+
+        let mut stmt = conn.prepare(
+            "SELECT a.message_id, a.path, a.mime, a.bytes
+               FROM attachments a JOIN messages m ON m.id = a.message_id
+              WHERE m.conversation_id = ?1
+              ORDER BY a.rowid",
+        )?;
+        let files = stmt
+            .query_map(params![conversation_id], |row| {
+                Ok((row.get::<_, String>(0)?, read_attachment(row)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for (message_id, file) in files {
+            if let Some(message) = messages.iter_mut().find(|m| m.id == message_id) {
+                message.attachments.push(file);
+            }
+        }
 
         Ok(Some(Thread {
             conversation,
@@ -383,6 +421,18 @@ fn read_conversation(row: &rusqlite::Row<'_>) -> rusqlite::Result<Conversation> 
     })
 }
 
+/// The name is derived rather than stored: it is the last segment of the path,
+/// and a second copy of it could only ever disagree with the first.
+fn read_attachment(row: &rusqlite::Row<'_>) -> rusqlite::Result<Attachment> {
+    let path: String = row.get(1)?;
+    Ok(Attachment {
+        name: engine::file_name(Path::new(&path)),
+        path,
+        mime: row.get(2)?,
+        bytes: row.get(3)?,
+    })
+}
+
 fn read_message(row: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
     let input_tokens: Option<i64> = row.get(4)?;
     let output_tokens: Option<i64> = row.get(5)?;
@@ -408,6 +458,7 @@ fn read_message(row: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
                     }),
             }),
         error: row.get(9)?,
+        attachments: Vec::new(),
     })
 }
 
@@ -474,6 +525,7 @@ mod tests {
             model: None,
             usage: None,
             error: None,
+            attachments: Vec::new(),
         }
     }
 
@@ -585,6 +637,95 @@ mod tests {
         let thread = db.thread("c1").unwrap().unwrap();
         assert_eq!(thread.messages[0].text, "written before v2");
         assert_eq!(thread.messages[0].usage, None);
+    }
+
+    fn attached(path: &str) -> Attachment {
+        Attachment {
+            path: path.to_owned(),
+            name: engine::file_name(Path::new(path)),
+            mime: Some(engine::mime_of(Path::new(path)).to_owned()),
+            bytes: Some(12),
+        }
+    }
+
+    #[test]
+    fn a_question_keeps_the_files_that_were_asked_alongside_it() {
+        let db = db();
+        db.ensure_conversation("c1", "what is this?", "claude-cli", None)
+            .unwrap();
+        db.add_message(
+            "c1",
+            &Message {
+                attachments: vec![attached("/home/a/blue.png"), attached("/home/a/notes.md")],
+                ..message("r1:u", "user", "what is this?")
+            },
+        )
+        .unwrap();
+        db.add_message("c1", &message("r1", "assistant", "blue"))
+            .unwrap();
+
+        let thread = db.thread("c1").unwrap().unwrap();
+        let files = &thread.messages[0].attachments;
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].name, "blue.png");
+        assert_eq!(files[0].mime.as_deref(), Some("image/png"));
+        assert_eq!(files[0].bytes, Some(12));
+        assert_eq!(files[1].name, "notes.md");
+        assert!(thread.messages[1].attachments.is_empty());
+    }
+
+    /// An edited question is rewritten under its own id, so its files have to be
+    /// replaced rather than joined by a second copy of themselves.
+    #[test]
+    fn rewriting_a_question_replaces_what_was_attached_to_it() {
+        let db = db();
+        db.ensure_conversation("c1", "hi", "claude-cli", None)
+            .unwrap();
+        db.add_message(
+            "c1",
+            &Message {
+                attachments: vec![attached("/a.png")],
+                ..message("r1:u", "user", "first")
+            },
+        )
+        .unwrap();
+        db.add_message(
+            "c1",
+            &Message {
+                attachments: vec![attached("/b.png"), attached("/c.png")],
+                ..message("r1:u", "user", "second")
+            },
+        )
+        .unwrap();
+
+        let files = &db.thread("c1").unwrap().unwrap().messages[0].attachments;
+        let names: Vec<_> = files.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, ["b.png", "c.png"]);
+    }
+
+    #[test]
+    fn truncating_takes_the_attachments_of_the_dropped_turns() {
+        let db = db();
+        db.ensure_conversation("c1", "hi", "claude-cli", None)
+            .unwrap();
+        for id in ["r1:u", "r1", "r2:u"] {
+            db.add_message(
+                "c1",
+                &Message {
+                    attachments: vec![attached("/a.png")],
+                    ..message(id, "user", id)
+                },
+            )
+            .unwrap();
+        }
+
+        db.truncate_after("c1", "r1").unwrap();
+        let orphans: i64 =
+            db.0.lock()
+                .unwrap()
+                .query_row("SELECT count(*) FROM attachments", [], |row| row.get(0))
+                .unwrap();
+        assert_eq!(orphans, 2);
     }
 
     #[test]

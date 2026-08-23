@@ -1,7 +1,8 @@
+use base64::Engine as _;
 use serde_json::Value;
 
 use crate::engine::{
-    now, system_prompt, CliAdapter, Context, Invocation, ParseState, RateLimit, RunRequest,
+    now, system_prompt, CliAdapter, Context, Invocation, Loaded, ParseState, RateLimit, RunRequest,
     StreamEvent, Usage,
 };
 
@@ -16,7 +17,7 @@ const TITLE_MODEL: &str = "haiku";
 pub struct ClaudeAdapter;
 
 impl CliAdapter for ClaudeAdapter {
-    fn invocation(&self, req: &RunRequest) -> Invocation {
+    fn invocation(&self, req: &RunRequest, files: &[Loaded]) -> Invocation {
         let mut args = vec![
             "-p".into(),
             "--output-format".into(),
@@ -65,11 +66,23 @@ impl CliAdapter for ClaudeAdapter {
             args.push("acceptEdits".into());
         }
 
+        // Plain text on stdin is the whole prompt when nothing is attached.
+        // Files need the richer input, which wraps every question in a JSON
+        // envelope, so it is switched on only where it buys something.
+        let stdin = if files.is_empty() {
+            req.prompt.clone()
+        } else {
+            args.push("--input-format".into());
+            args.push("stream-json".into());
+            user_message(&req.prompt, files)
+        };
+
         Invocation {
             program: "claude".into(),
             args,
-            stdin: Some(req.prompt.clone()),
+            stdin: Some(stdin),
             cwd: req.agent_dir.clone(),
+            env: Vec::new(),
         }
     }
 
@@ -93,6 +106,7 @@ impl CliAdapter for ClaudeAdapter {
             ],
             stdin: Some(question.to_owned()),
             cwd: None,
+            env: Vec::new(),
         }
     }
 
@@ -189,6 +203,54 @@ impl CliAdapter for ClaudeAdapter {
         }
 
         events
+    }
+}
+
+/// One JSONL line carrying the question and everything attached to it. Images
+/// go as base64 blocks; anything else goes as text under its own name, because
+/// a chat-only run has no tool with which to open a path.
+fn user_message(prompt: &str, files: &[Loaded]) -> String {
+    let mut content = vec![serde_json::json!({ "type": "text", "text": prompt })];
+
+    for file in files {
+        content.push(match image_type(&file.mime) {
+            Some(media_type) => serde_json::json!({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": base64::engine::general_purpose::STANDARD.encode(&file.data),
+                },
+            }),
+            None => serde_json::json!({
+                "type": "text",
+                "text": format!(
+                    "Attached file `{}`:\n\n{}",
+                    file.name,
+                    String::from_utf8_lossy(&file.data)
+                ),
+            }),
+        });
+    }
+
+    format!(
+        "{}\n",
+        serde_json::json!({
+            "type": "user",
+            "message": { "role": "user", "content": content },
+        })
+    )
+}
+
+/// The four the API takes. A `.bmp` is an image to the user and a text block to
+/// the model, which is the honest failure: it arrives named, and unreadable.
+fn image_type(mime: &str) -> Option<&'static str> {
+    match mime {
+        "image/png" => Some("image/png"),
+        "image/jpeg" => Some("image/jpeg"),
+        "image/gif" => Some("image/gif"),
+        "image/webp" => Some("image/webp"),
+        _ => None,
     }
 }
 
@@ -315,7 +377,23 @@ mod tests {
             session_id: None,
             model: None,
             agent_dir: None,
+            attachments: Vec::new(),
         }
+    }
+
+    fn loaded(name: &str, data: &[u8]) -> Loaded {
+        let path = PathBuf::from("/tmp").join(name);
+        Loaded {
+            mime: crate::engine::mime_of(&path).to_owned(),
+            name: name.to_owned(),
+            path,
+            data: data.to_vec(),
+        }
+    }
+
+    fn blocks(invocation: &Invocation) -> Vec<Value> {
+        let line: Value = serde_json::from_str(invocation.stdin.as_deref().unwrap()).unwrap();
+        line["message"]["content"].as_array().unwrap().clone()
     }
 
     fn drain(lines: &[&str]) -> (Vec<StreamEvent>, ParseState) {
@@ -582,7 +660,7 @@ mod tests {
 
     #[test]
     fn chat_only_hands_the_run_no_tools_at_all() {
-        let invocation = ClaudeAdapter.invocation(&request());
+        let invocation = ClaudeAdapter.invocation(&request(), &[]);
         assert_eq!(invocation.program, "claude");
         assert_eq!(invocation.stdin.as_deref(), Some("count to 3"));
         assert_eq!(invocation.cwd, None);
@@ -658,7 +736,7 @@ mod tests {
     fn agent_mode_appends_to_the_provider_prompt() {
         let mut req = request();
         req.agent_dir = Some(PathBuf::from("/tmp/project"));
-        let invocation = ClaudeAdapter.invocation(&req);
+        let invocation = ClaudeAdapter.invocation(&req, &[]);
 
         let prompt = invocation
             .args
@@ -673,7 +751,7 @@ mod tests {
     fn agent_mode_enables_tools_pinned_to_a_directory() {
         let mut req = request();
         req.agent_dir = Some(PathBuf::from("/tmp/project"));
-        let invocation = ClaudeAdapter.invocation(&req);
+        let invocation = ClaudeAdapter.invocation(&req, &[]);
 
         assert_eq!(invocation.cwd, Some(PathBuf::from("/tmp/project")));
         assert!(!invocation.args.iter().any(|arg| arg == "--allowed-tools"));
@@ -688,9 +766,76 @@ mod tests {
 
     #[test]
     fn chat_only_never_relaxes_permissions() {
-        let invocation = ClaudeAdapter.invocation(&request());
+        let invocation = ClaudeAdapter.invocation(&request(), &[]);
         assert!(invocation.cwd.is_none());
         assert!(!invocation.args.iter().any(|arg| arg == "--permission-mode"));
+    }
+
+    #[test]
+    fn an_image_is_sent_as_a_block_the_model_can_see() {
+        let invocation =
+            ClaudeAdapter.invocation(&request(), &[loaded("blue.png", &[0x89, b'P', b'N'])]);
+
+        // The richer input format costs an envelope, so it is only asked for
+        // when there is something in it that plain text cannot carry.
+        let format = invocation
+            .args
+            .iter()
+            .position(|arg| arg == "--input-format")
+            .expect("attachments need stream-json in as well as out");
+        assert_eq!(invocation.args[format + 1], "stream-json");
+
+        let blocks = blocks(&invocation);
+        assert_eq!(
+            blocks[0],
+            serde_json::json!({"type":"text","text":"count to 3"})
+        );
+        assert_eq!(
+            blocks[1],
+            serde_json::json!({
+                "type": "image",
+                "source": {"type": "base64", "media_type": "image/png", "data": "iVBO"},
+            })
+        );
+    }
+
+    /// A chat-only run has no tool with which to open a path, so a text file
+    /// arrives as its contents or not at all.
+    #[test]
+    fn a_text_file_arrives_as_text_under_its_own_name() {
+        let invocation = ClaudeAdapter.invocation(&request(), &[loaded("notes.md", b"# Orbits")]);
+        let blocks = blocks(&invocation);
+        assert_eq!(blocks[1]["type"], "text");
+        let text = blocks[1]["text"].as_str().unwrap();
+        assert!(text.contains("notes.md"));
+        assert!(text.ends_with("# Orbits"));
+    }
+
+    /// The user sees an image; the model sees a text block it cannot read. The
+    /// alternative is a media type the API rejects, taking the question with it.
+    #[test]
+    fn an_image_type_the_api_does_not_take_is_not_claimed_to_be_one() {
+        let invocation = ClaudeAdapter.invocation(&request(), &[loaded("scan.bmp", b"BM")]);
+        assert_eq!(blocks(&invocation)[1]["type"], "text");
+    }
+
+    #[test]
+    fn a_question_with_nothing_attached_is_still_plain_text_on_stdin() {
+        let invocation = ClaudeAdapter.invocation(&request(), &[]);
+        assert_eq!(invocation.stdin.as_deref(), Some("count to 3"));
+        assert!(!invocation.args.iter().any(|arg| arg == "--input-format"));
+    }
+
+    #[test]
+    fn attachments_survive_alongside_agent_mode_and_a_resumed_session() {
+        let mut req = request();
+        req.agent_dir = Some(PathBuf::from("/tmp/project"));
+        req.session_id = Some(SESSION.into());
+        let invocation = ClaudeAdapter.invocation(&req, &[loaded("a.png", b"x")]);
+
+        assert_eq!(blocks(&invocation).len(), 2);
+        assert!(invocation.args.iter().any(|arg| arg == "--resume"));
+        assert_eq!(invocation.cwd, Some(PathBuf::from("/tmp/project")));
     }
 
     #[test]
@@ -698,7 +843,7 @@ mod tests {
         let mut req = request();
         req.session_id = Some(SESSION.into());
         req.model = Some("opus".into());
-        let invocation = ClaudeAdapter.invocation(&req);
+        let invocation = ClaudeAdapter.invocation(&req, &[]);
 
         let resume = invocation
             .args

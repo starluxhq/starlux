@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import AgentMode from "../components/AgentMode";
-import Attachments, { type Attachment } from "../components/Attachments";
+import Attachments from "../components/Attachments";
 import Composer from "../components/Composer";
 import ContextMeter from "../components/ContextMeter";
 import { ModelMenu, ModelTrigger } from "../components/ModelPicker";
@@ -15,6 +15,7 @@ import ProviderHint from "../components/ProviderHint";
 import Turn from "../components/Turn";
 import { onAsk, onStream } from "../lib/events";
 import { PICKER } from "../lib/models";
+import type { Attachment } from "../lib/types";
 import {
   hideQuickBar,
   openWorkspace,
@@ -136,7 +137,7 @@ export default function QuickBar() {
   }, [status, stop, newConversation, picking]);
 
   const submit = () => {
-    void send(draft);
+    void send(draft, files);
     setDraft("");
     setFiles([]);
   };

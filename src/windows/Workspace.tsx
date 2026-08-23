@@ -2,7 +2,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
 import AgentMode from "../components/AgentMode";
 import ArtifactViewer from "../components/ArtifactViewer";
-import Attachments, { type Attachment } from "../components/Attachments";
+import Attachments from "../components/Attachments";
 import Composer from "../components/Composer";
 import ConversationList from "../components/ConversationList";
 import ContextMeter from "../components/ContextMeter";
@@ -13,6 +13,7 @@ import SidebarToolbar from "../components/SidebarToolbar";
 import WindowControls from "../components/WindowControls";
 import { PICKER } from "../lib/models";
 import { platform } from "../lib/platform";
+import type { Attachment } from "../lib/types";
 import { onConversationsChanged, onFocusConversation, onStream } from "../lib/events";
 import { activeConversation, saveSidebarCollapsed, sidebarCollapsed } from "../lib/ipc";
 import { useArtifact } from "../stores/useArtifact";
@@ -109,7 +110,7 @@ export default function Workspace() {
   };
 
   const submit = () => {
-    void send(draft);
+    void send(draft, files);
     setDraft("");
     setFiles([]);
   };

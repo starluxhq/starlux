@@ -3,6 +3,7 @@ import { copyText } from "../lib/clipboard";
 import { railState } from "../lib/turn";
 import type { Status, Turn as ChatTurn } from "../stores/useChat";
 import Answer from "./Answer";
+import Attachments from "./Attachments";
 import Composer from "./Composer";
 import ContextMenu from "./ContextMenu";
 import Question from "./Question";
@@ -75,6 +76,7 @@ export default function Turn({ turn, status, runId, dense = false, onRetry, onEd
     return (
       <div className="group" onContextMenu={openMenu}>
         <Question text={turn.text} />
+        <Attachments className="justify-end pt-1.5" items={turn.attachments ?? []} />
         <div className="flex justify-end">
           <TurnActions onCopy={() => void copyText(turn.text)} onEdit={() => setDraft(turn.text)} />
         </div>

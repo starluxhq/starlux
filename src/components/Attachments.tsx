@@ -1,11 +1,9 @@
-export interface Attachment {
-  path: string;
-  name: string;
-}
+import type { Attachment } from "../lib/types";
 
 interface AttachmentsProps {
   items: Attachment[];
-  onRemove: (path: string) => void;
+  /** Absent once the question has been asked: what was sent was sent. */
+  onRemove?: (path: string) => void;
   className?: string;
 }
 
@@ -18,17 +16,26 @@ export default function Attachments({ items, onRemove, className = "" }: Attachm
     <ul className={`flex flex-wrap gap-2 ${className}`}>
       {items.map((item) => (
         <li key={item.path}>
-          <button
-            type="button"
-            title={`${item.path}\n\nNot sent to the provider yet.`}
-            onClick={() => onRemove(item.path)}
-            className="group flex max-w-44 items-center gap-1.5 rounded-md border border-rule bg-haze px-2 py-1 text-[11.5px] text-muted hover:border-class-m/60 hover:text-ink"
-          >
-            <span className="truncate">{item.name}</span>
-            <span aria-hidden className="text-faint group-hover:text-class-m">
-              ×
+          {onRemove ? (
+            <button
+              type="button"
+              title={item.path}
+              onClick={() => onRemove(item.path)}
+              className="group flex max-w-44 items-center gap-1.5 rounded-md border border-rule bg-haze px-2 py-1 text-[11.5px] text-muted hover:border-class-m/60 hover:text-ink"
+            >
+              <span className="truncate">{item.name}</span>
+              <span aria-hidden className="text-faint group-hover:text-class-m">
+                ×
+              </span>
+            </button>
+          ) : (
+            <span
+              title={item.path}
+              className="flex max-w-44 items-center rounded-md border border-rule bg-haze px-2 py-1 text-[11.5px] text-muted"
+            >
+              <span className="truncate">{item.name}</span>
             </span>
-          </button>
+          )}
         </li>
       ))}
     </ul>
