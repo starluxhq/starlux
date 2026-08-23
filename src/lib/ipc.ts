@@ -24,6 +24,9 @@ export const selectedModel = () => invoke<Selection | null>("selected_model");
 export const rateLimits = () => invoke<RateLimit[]>("rate_limits");
 export const saveSelectedModel = (providerId: string, model: string) =>
   invoke<void>("set_selected_model", { providerId, model });
+export const sidebarCollapsed = () => invoke<boolean>("sidebar_collapsed");
+export const saveSidebarCollapsed = (collapsed: boolean) =>
+  invoke<void>("set_sidebar_collapsed", { collapsed });
 export const storeArtifact = (html: string) => invoke<string>("store_artifact", { html });
 export const cancelRun = (runId: string) => invoke<boolean>("cancel_run", { runId });
 

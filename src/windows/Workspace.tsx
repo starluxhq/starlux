@@ -11,11 +11,12 @@ import { ModelMenu, ModelTrigger } from "../components/ModelPicker";
 import ProviderHint from "../components/ProviderHint";
 import Question from "../components/Question";
 import Rail from "../components/Rail";
+import SidebarToolbar from "../components/SidebarToolbar";
 import WindowControls from "../components/WindowControls";
 import { PICKER } from "../lib/models";
 import { platform } from "../lib/platform";
 import { onConversationsChanged, onFocusConversation, onStream } from "../lib/events";
-import { activeConversation } from "../lib/ipc";
+import { activeConversation, saveSidebarCollapsed, sidebarCollapsed } from "../lib/ipc";
 import { railState } from "../lib/turn";
 import { useArtifact } from "../stores/useArtifact";
 import { applyMirrored, currentContext, useChat } from "../stores/useChat";
@@ -25,6 +26,10 @@ export default function Workspace() {
   const [draft, setDraft] = useState("");
   const [files, setFiles] = useState<Attachment[]>([]);
   const [picking, setPicking] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  // The stored state has to land without sliding: restoring a hidden sidebar
+  // is not a move the user made, so only their own toggles are animated.
+  const [animate, setAnimate] = useState(false);
   const {
     providers,
     limits,
@@ -53,6 +58,7 @@ export default function Workspace() {
     void activeConversation().then((id) => {
       if (id) void openConversation(id);
     });
+    void sidebarCollapsed().then(setCollapsed);
   }, [loadProviders, load, openConversation]);
 
   useEffect(() => onStream(applyMirrored), []);
@@ -74,6 +80,11 @@ export default function Workspace() {
     return () => document.removeEventListener("mousedown", dismiss, true);
   }, [picking]);
 
+  const startConversation = () => {
+    setDraft("");
+    newConversation();
+  };
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const accel = event.metaKey || event.ctrlKey;
@@ -91,6 +102,12 @@ export default function Workspace() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [status, stop, newConversation, expanded, collapse, picking]);
 
+
+  const showSidebar = (shown: boolean) => {
+    setAnimate(true);
+    setCollapsed(!shown);
+    void saveSidebarCollapsed(!shown);
+  };
 
   const submit = () => {
     void send(draft);
@@ -131,6 +148,26 @@ export default function Workspace() {
           platform === "macos" ? "pl-[82px]" : "pl-5"
         }`}
       >
+        {collapsed ? (
+          <button
+            type="button"
+            onClick={() => showSidebar(true)}
+            aria-label="Show conversations"
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-white/6 hover:text-ink"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden className="size-3.5">
+              <path
+                d="M6.5 4l4 4-4 4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.4}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        ) : null}
+
         <span data-tauri-drag-region className="font-serif text-[15px] tracking-tight">
           Starlux
         </span>
@@ -146,32 +183,29 @@ export default function Workspace() {
       </div>
 
       <div className="flex min-h-0 flex-1">
-        <aside className="flex w-64 shrink-0 flex-col border-r border-white/6 bg-dust/60">
-          <div className="flex items-baseline justify-between px-5 pt-4 pb-3">
-            <p className="font-mono text-[10px] tracking-wider text-faint uppercase">
+        {/* The list slides away rather than squashing: a fixed-width column
+            inside a wrapper that is all that changes width. */}
+        <aside
+          className={`shrink-0 overflow-hidden border-r border-white/6 bg-dust/60 ${
+            animate ? "transition-[width] duration-200 ease-out motion-reduce:transition-none" : ""
+          } ${collapsed ? "w-0 border-r-0" : "w-64"}`}
+        >
+          <div className="flex h-full w-64 flex-col">
+            <SidebarToolbar onNew={startConversation} onCollapse={() => showSidebar(false)} />
+            <p className="px-5 pt-3 pb-3 font-mono text-[10px] tracking-wider text-faint uppercase">
               Conversations
             </p>
-            <button
-              type="button"
-              onClick={() => {
-                setDraft("");
-                newConversation();
-              }}
-              className="font-mono text-[10px] tracking-wider text-muted uppercase hover:text-ink"
-            >
-              New
-            </button>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-            <ConversationList
-              items={items}
-              activeId={conversationId}
-              onOpen={(id) => void openConversation(id)}
-              onDelete={(id) => {
-                if (id === conversationId) newConversation();
-                void remove(id);
-              }}
-            />
+            <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+              <ConversationList
+                items={items}
+                activeId={conversationId}
+                onOpen={(id) => void openConversation(id)}
+                onDelete={(id) => {
+                  if (id === conversationId) newConversation();
+                  void remove(id);
+                }}
+              />
+            </div>
           </div>
         </aside>
 

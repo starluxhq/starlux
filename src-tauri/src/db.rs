@@ -60,6 +60,8 @@ pub const ACTIVE_CONVERSATION: &str = "active_conversation";
 /// What the next run will ask for, which outlives any one conversation.
 pub const SELECTED_PROVIDER: &str = "selected_provider";
 pub const SELECTED_MODEL: &str = "selected_model";
+/// Whether the Workspace's conversation list is slid away.
+pub const SIDEBAR_COLLAPSED: &str = "sidebar_collapsed";
 /// One row per provider holding only its latest window. A snapshot of something
 /// that moves, not a history: `messages` is where anything worth keeping goes.
 const RATE_LIMIT_PREFIX: &str = "rate_limit:";
