@@ -19,14 +19,16 @@ agents.
     binary each, `system_prompt.rs` is what every run is told.
   - `db.rs` SQLite, `commands.rs` the IPC surface, `platform.rs` env guards.
 - `capabilities/*.json` scope Tauri permissions per window.
-- Tests live beside the code: `#[cfg(test)] mod tests` in the same Rust file.
+- Tests live beside the code: `#[cfg(test)] mod tests` in the same Rust file,
+  `*.test.ts(x)` next to the module or component it covers.
 
 ## Build, Test, and Development Commands
 
 ```sh
 pnpm install
 pnpm tauri dev            # app; needs the Vite dev server, which this starts
-pnpm check                # typecheck, build, cargo fmt, clippy, cargo test
+pnpm check                # typecheck, vitest, build, cargo fmt, clippy, cargo test
+pnpm test                 # vitest, frontend only
 pnpm typecheck            # tsc --noEmit alone
 pnpm dlx react-doctor@latest --scope changed
 ```
