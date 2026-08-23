@@ -8,6 +8,7 @@ import {
   saveSelectedModel,
   selectedModel,
   setAgentDir as saveAgentDir,
+  setWeb as saveWeb,
   truncateAfter,
 } from "../lib/ipc";
 import {
@@ -45,12 +46,14 @@ interface ChatState {
   conversationId: string | null;
   sessionId: string | null;
   agentDir: string | null;
+  web: boolean;
   turns: Turn[];
   status: Status;
   runId: string | null;
   loadProviders: () => Promise<void>;
   selectModel: (providerId: string, model: string) => void;
   setAgentDir: (dir: string | null) => Promise<void>;
+  setWeb: (web: boolean) => Promise<void>;
   apply: (event: StreamEvent) => void;
   openConversation: (id: string) => Promise<void>;
   newConversation: () => void;
@@ -113,6 +116,7 @@ export const useChat = create<ChatState>((set, get) => ({
   conversationId: null,
   sessionId: null,
   agentDir: null,
+  web: false,
   turns: [],
   status: "idle",
   runId: null,
@@ -157,11 +161,20 @@ export const useChat = create<ChatState>((set, get) => ({
     set({ agentDir: dir });
   },
 
+  // The other half, stored the same way. A conversation with no id yet has
+  // nowhere to write it, so the grant travels with the run that opens it.
+  setWeb: async (web) => {
+    const { conversationId } = get();
+    if (conversationId) await saveWeb(conversationId, web);
+    set({ web });
+  },
+
   newConversation: () =>
     set({
       conversationId: null,
       sessionId: null,
       agentDir: null,
+      web: false,
       turns: [],
       status: "idle",
       runId: null,
@@ -256,6 +269,7 @@ export const useChat = create<ChatState>((set, get) => ({
         providerId: thread.conversation.providerId,
         sessionId: thread.conversation.sessionId,
         agentDir: thread.conversation.agentDir,
+        web: thread.conversation.web,
         turns,
       };
     });
@@ -311,7 +325,8 @@ export const useChat = create<ChatState>((set, get) => ({
 /** One run, under an id the caller chooses — new for a question just asked,
  *  the old one for a question being asked again. */
 async function dispatch(runId: string, prompt: string, files: Attachment[]) {
-  const { conversationId, providerId, model, sessionId, agentDir, apply } = useChat.getState();
+  const { conversationId, providerId, model, sessionId, agentDir, web, apply } =
+    useChat.getState();
   const id = conversationId ?? crypto.randomUUID();
 
   // Shown right away; the run replaces them with what the core actually read,
@@ -328,6 +343,7 @@ async function dispatch(runId: string, prompt: string, files: Attachment[]) {
         sessionId,
         model,
         agentDir,
+        web,
         attachments: files.map((file) => file.path),
       },
       apply,

@@ -24,6 +24,11 @@ pub struct RunRequest {
     /// `None` is chat-only: the CLI cannot touch the filesystem.
     #[serde(default)]
     pub agent_dir: Option<PathBuf>,
+    /// Whether this run may reach the network. The other half of the grant, and
+    /// deliberately not a step above `agent_dir`: looking something up should
+    /// not cost a folder, and a folder should not quietly buy the network.
+    #[serde(default)]
+    pub web: bool,
     /// Paths, not contents: this arrives over IPC from a window, and a window
     /// naming a file is not the same as it having handed one over. The core
     /// reads them itself, under its own size cap.
