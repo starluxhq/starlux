@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { copyText, pasteText } from "../lib/clipboard";
+import ContextMenu from "./ContextMenu";
 
 interface ComposerProps {
   value: string;
@@ -21,6 +23,11 @@ export default function Composer({
   marker = true,
 }: ComposerProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  // The range is taken when the menu opens: clicking an item takes focus off
+  // the textarea, and with it any record of what was selected.
+  const [menu, setMenu] = useState<{ x: number; y: number; start: number; end: number } | null>(
+    null,
+  );
 
   const fit = useCallback(() => {
     const textarea = ref.current;
@@ -45,6 +52,16 @@ export default function Composer({
     return () => observer.disconnect();
   }, [fit]);
 
+  const replaceRange = (replacement: string, range: { start: number; end: number }) => {
+    const textarea = ref.current;
+    if (!textarea) return;
+    textarea.focus();
+    textarea.setRangeText(replacement, range.start, range.end, "end");
+    onChange(textarea.value);
+  };
+
+  const selected = menu ? value.slice(menu.start, menu.end) : "";
+
   return (
     <div className="flex min-w-0 flex-1 items-start gap-3">
       {marker ? (
@@ -59,6 +76,14 @@ export default function Composer({
         placeholder={placeholder}
         spellCheck={false}
         onChange={(event) => onChange(event.target.value)}
+        onContextMenu={(event) =>
+          setMenu({
+            x: event.clientX,
+            y: event.clientY,
+            start: event.currentTarget.selectionStart,
+            end: event.currentTarget.selectionEnd,
+          })
+        }
         onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();
@@ -67,6 +92,42 @@ export default function Composer({
         }}
         className="min-w-0 flex-1 resize-none bg-transparent text-[15px] leading-[22px] text-ink outline-none placeholder:text-faint"
       />
+
+      {menu ? (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            ...(selected
+              ? [
+                  {
+                    label: "Cut",
+                    onSelect: () => {
+                      void copyText(selected);
+                      replaceRange("", menu);
+                    },
+                  },
+                  { label: "Copy", onSelect: () => void copyText(selected) },
+                ]
+              : []),
+            {
+              label: "Paste",
+              onSelect: () =>
+                void pasteText().then((text) => {
+                  if (text) replaceRange(text, menu);
+                }),
+            },
+            {
+              label: "Select all",
+              onSelect: () => {
+                ref.current?.focus();
+                ref.current?.select();
+              },
+            },
+          ]}
+        />
+      ) : null}
     </div>
   );
 }

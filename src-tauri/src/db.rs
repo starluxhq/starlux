@@ -76,6 +76,7 @@ pub struct Conversation {
     pub model: Option<String>,
     pub agent_dir: Option<String>,
     pub updated_at: i64,
+    pub pinned: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -203,6 +204,17 @@ impl Db {
         Ok(())
     }
 
+    /// A pinned conversation sorts above the rest; `list_conversations` has
+    /// always ordered by it, and this is what finally writes it.
+    pub fn set_pinned(&self, id: &str, pinned: bool) -> rusqlite::Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "UPDATE conversations SET pinned = ?2 WHERE id = ?1",
+            params![id, pinned],
+        )?;
+        Ok(())
+    }
+
     pub fn agent_dir(&self, id: &str) -> rusqlite::Result<Option<String>> {
         let conn = self.0.lock().unwrap();
         conn.query_row(
@@ -217,7 +229,8 @@ impl Db {
     pub fn list_conversations(&self) -> rusqlite::Result<Vec<Conversation>> {
         let conn = self.0.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, title, provider_id, provider_session_id, model, agent_dir, updated_at
+            "SELECT id, title, provider_id, provider_session_id, model, agent_dir, updated_at,
+                    pinned
                FROM conversations
               ORDER BY pinned DESC, updated_at DESC",
         )?;
@@ -229,7 +242,8 @@ impl Db {
         let conn = self.0.lock().unwrap();
         let conversation = conn
             .query_row(
-                "SELECT id, title, provider_id, provider_session_id, model, agent_dir, updated_at
+                "SELECT id, title, provider_id, provider_session_id, model, agent_dir, updated_at,
+                    pinned
                    FROM conversations WHERE id = ?1",
                 params![conversation_id],
                 read_conversation,
@@ -351,6 +365,7 @@ fn read_conversation(row: &rusqlite::Row<'_>) -> rusqlite::Result<Conversation> 
         model: row.get(4)?,
         agent_dir: row.get(5)?,
         updated_at: row.get(6)?,
+        pinned: row.get(7)?,
     })
 }
 
@@ -740,6 +755,32 @@ mod tests {
             .map(|c| c.id)
             .collect();
         assert_eq!(ids, ["c1", "c2"]);
+    }
+
+    #[test]
+    fn a_pinned_conversation_outranks_a_newer_one() {
+        let db = db();
+        db.ensure_conversation("old", "older", "claude-cli", None)
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        db.ensure_conversation("new", "newer", "claude-cli", None)
+            .unwrap();
+        assert_eq!(listed(&db), ["new", "old"]);
+
+        db.set_pinned("old", true).unwrap();
+        assert_eq!(listed(&db), ["old", "new"]);
+        assert!(db.thread("old").unwrap().unwrap().conversation.pinned);
+
+        db.set_pinned("old", false).unwrap();
+        assert_eq!(listed(&db), ["new", "old"]);
+    }
+
+    fn listed(db: &Db) -> Vec<String> {
+        db.list_conversations()
+            .unwrap()
+            .into_iter()
+            .map(|c| c.id)
+            .collect()
     }
 
     #[test]

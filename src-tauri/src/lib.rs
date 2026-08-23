@@ -48,6 +48,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         // A packaged GUI app has no stdout, so without a file target the only
         // diagnostics we emit are the ones nobody can read.
@@ -99,6 +100,7 @@ pub fn run() {
             commands::load_conversation,
             commands::rename_conversation,
             commands::delete_conversation,
+            commands::set_pinned,
             commands::set_agent_dir,
             commands::run_prompt,
             commands::cancel_run,

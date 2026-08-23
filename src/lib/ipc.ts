@@ -42,6 +42,9 @@ export const setAgentDir = (id: string, dir: string | null) =>
 export const renameConversation = (id: string, title: string) =>
   invoke<void>("rename_conversation", { id, title });
 
+export const setPinned = (id: string, pinned: boolean) =>
+  invoke<void>("set_pinned", { id, pinned });
+
 export const setBlurHideSuppressed = (suppressed: boolean) =>
   invoke<void>("set_blur_hide_suppressed", { suppressed });
 

@@ -49,7 +49,7 @@ export default function Workspace() {
     stop,
   } = useChat();
   const context = currentContext(turns);
-  const { items, load, remove } = useConversations();
+  const { items, load, rename, pin, remove } = useConversations();
   const { expanded, collapse } = useArtifact();
 
   useEffect(() => {
@@ -200,6 +200,8 @@ export default function Workspace() {
                 items={items}
                 activeId={conversationId}
                 onOpen={(id) => void openConversation(id)}
+                onRename={(id, title) => void rename(id, title)}
+                onPin={(id, pinned) => void pin(id, pinned)}
                 onDelete={(id) => {
                   if (id === conversationId) newConversation();
                   void remove(id);
