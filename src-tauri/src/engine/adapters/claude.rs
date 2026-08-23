@@ -7,6 +7,11 @@ use crate::engine::{
 
 /// Namespaced so a user's own agent of the same name is never the one that runs.
 const CHAT_AGENT: &str = "starlux-chat";
+const TITLE_AGENT: &str = "starlux-title";
+
+/// Naming a conversation is not the work the user is paying attention to, so
+/// it is asked of the cheapest model rather than the one they picked.
+const TITLE_MODEL: &str = "haiku";
 
 pub struct ClaudeAdapter;
 
@@ -65,6 +70,29 @@ impl CliAdapter for ClaudeAdapter {
             args,
             stdin: Some(req.prompt.clone()),
             cwd: req.agent_dir.clone(),
+        }
+    }
+
+    /// Plain text out, no session in: resuming would carry the whole thread and
+    /// cost exactly the tokens this run exists to avoid. No `cwd` either — it
+    /// reads what it is given on stdin and has no reason to see a disk.
+    fn title_invocation(&self, exchange: &str) -> Invocation {
+        Invocation {
+            program: "claude".into(),
+            args: vec![
+                "-p".into(),
+                "--output-format".into(),
+                "text".into(),
+                "--model".into(),
+                TITLE_MODEL.into(),
+                "--strict-mcp-config".into(),
+                "--agents".into(),
+                title_agent(),
+                "--agent".into(),
+                TITLE_AGENT.into(),
+            ],
+            stdin: Some(exchange.to_owned()),
+            cwd: None,
         }
     }
 
@@ -169,6 +197,17 @@ fn chat_agent() -> String {
         CHAT_AGENT: {
             "description": "Answers questions from the Starlux bar",
             "prompt": system_prompt::chat(),
+            "tools": [],
+        }
+    })
+    .to_string()
+}
+
+fn title_agent() -> String {
+    serde_json::json!({
+        TITLE_AGENT: {
+            "description": "Names a Starlux conversation",
+            "prompt": system_prompt::title(),
             "tools": [],
         }
     })
@@ -579,6 +618,37 @@ mod tests {
             .args
             .iter()
             .any(|arg| arg == "--append-system-prompt"));
+    }
+
+    #[test]
+    fn naming_a_conversation_is_a_cheap_toolless_one_shot() {
+        let invocation = ClaudeAdapter.title_invocation("Question:\nhi\n\nAnswer:\nhello");
+        assert_eq!(invocation.program, "claude");
+        assert_eq!(invocation.cwd, None);
+        assert!(invocation.stdin.unwrap().starts_with("Question:"));
+        assert!(!invocation.args.iter().any(|arg| arg == "--bare"));
+
+        let model = invocation
+            .args
+            .iter()
+            .position(|arg| arg == "--model")
+            .expect("naming must pin its own model, not inherit the user's");
+        assert_eq!(invocation.args[model + 1], TITLE_MODEL);
+
+        // Resuming would carry the whole thread and cost what this run avoids.
+        assert!(!invocation.args.iter().any(|arg| arg == "--resume"));
+
+        let definition = invocation
+            .args
+            .iter()
+            .position(|arg| arg == "--agents")
+            .expect("naming must define the agent it runs as");
+        let agents: Value = serde_json::from_str(&invocation.args[definition + 1]).unwrap();
+        assert_eq!(agents[TITLE_AGENT]["tools"], serde_json::json!([]));
+        assert!(invocation
+            .args
+            .iter()
+            .any(|arg| arg == "--strict-mcp-config"));
     }
 
     #[test]

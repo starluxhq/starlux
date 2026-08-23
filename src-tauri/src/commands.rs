@@ -7,6 +7,7 @@ use crate::db::{self, Conversation, Message, Thread};
 use crate::engine::cli::{self, Runs};
 use crate::engine::providers::{self, Provider};
 use crate::engine::sink::Sink;
+use crate::engine::title;
 use crate::engine::{RateLimit, RunRequest, StreamEvent};
 use crate::state::AppState;
 use crate::windows;
@@ -204,6 +205,7 @@ pub async fn run_prompt(
     // what this run may touch: an existing conversation keeps the grant it was
     // given, and a new one records the one it arrived with.
     let id = conversation_id.clone();
+    let named_by = provider_id.clone();
     let granted = db::query(&app, move |db| {
         db.ensure_conversation(&id, &prompt, &provider_id, agent_dir.as_deref())?;
         db.set_setting(db::ACTIVE_CONVERSATION, Some(&id))?;
@@ -221,10 +223,18 @@ pub async fn run_prompt(
         app.clone(),
         window.label().to_owned(),
         on_event,
-        conversation_id,
+        conversation_id.clone(),
         request.model.clone(),
     );
-    cli::run(app, request, sink).await
+    let outcome = cli::run(app.clone(), request, sink).await;
+
+    // Offered after every run rather than only the first: a conversation whose
+    // opening run failed would otherwise keep the first line typed into it
+    // forever. Whether this exchange is the one to name is the task's to judge.
+    if outcome.is_ok() {
+        tauri::async_runtime::spawn(title::name_conversation(app, named_by, conversation_id));
+    }
+    outcome
 }
 
 #[tauri::command]
