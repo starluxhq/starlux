@@ -58,6 +58,13 @@ pub fn configure_quickbar(window: &WebviewWindow) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Already done by `titleBarStyle: "Overlay"` in the config, which leaves the
+/// traffic lights floating over the page and takes the rest of the bar away.
+/// Dropping the decorations outright would take the lights with them.
+pub fn configure_workspace(_window: &WebviewWindow) -> tauri::Result<()> {
+    Ok(())
+}
+
 pub fn show_quickbar(app: &AppHandle) -> tauri::Result<()> {
     app.get_webview_panel(QUICKBAR)
         .map(|panel| panel.show_and_make_key())

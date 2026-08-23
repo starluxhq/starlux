@@ -41,7 +41,8 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     // why the width is bounded here instead.
     quickbar.set_min_size(Some(tauri::LogicalSize::new(BAR_WIDTH, BAR_MIN_HEIGHT)))?;
     quickbar.set_max_size(Some(tauri::LogicalSize::new(BAR_WIDTH, BAR_MAX_HEIGHT)))?;
-    imp::configure_quickbar(&quickbar)
+    imp::configure_quickbar(&quickbar)?;
+    imp::configure_workspace(&window(app, WORKSPACE)?)
 }
 
 pub fn show_quickbar(app: &AppHandle) -> tauri::Result<()> {
