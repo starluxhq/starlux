@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 /** Marks an open menu, so a click inside it is not a dismissal. Lives here
  *  rather than beside the component: a component file that exports anything
@@ -16,23 +16,31 @@ export function suppressNativeMenu() {
 /** Closes an open menu on anything that means "not this": a click elsewhere,
  *  Escape, or the surface underneath moving. */
 export function useDismiss(open: boolean, onClose: () => void) {
+  // Held in a ref so the listeners are registered once per opening, rather
+  // than torn down and rebuilt on every render of whatever opened them.
+  const close = useRef(onClose);
+  useLayoutEffect(() => {
+    close.current = onClose;
+  }, [onClose]);
+
   useEffect(() => {
     if (!open) return;
     const away = (event: MouseEvent) => {
-      if (!(event.target as HTMLElement).closest(`[${MENU}]`)) onClose();
+      if (!(event.target as HTMLElement).closest(`[${MENU}]`)) close.current();
     };
     const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") close.current();
     };
+    const moved = () => close.current();
     document.addEventListener("mousedown", away, true);
     document.addEventListener("keydown", key, true);
-    window.addEventListener("resize", onClose);
-    window.addEventListener("scroll", onClose, true);
+    window.addEventListener("resize", moved);
+    window.addEventListener("scroll", moved, true);
     return () => {
       document.removeEventListener("mousedown", away, true);
       document.removeEventListener("keydown", key, true);
-      window.removeEventListener("resize", onClose);
-      window.removeEventListener("scroll", onClose, true);
+      window.removeEventListener("resize", moved);
+      window.removeEventListener("scroll", moved, true);
     };
-  }, [open, onClose]);
+  }, [open]);
 }
