@@ -32,6 +32,19 @@ pub struct Usage {
     pub output_tokens: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cost_usd: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<Context>,
+}
+
+/// How much of the model's window this conversation now occupies. Both halves
+/// are the provider's own numbers, so unlike a share of the subscription window
+/// this is arithmetic rather than a guess: what the CLI says it sent, over what
+/// it says the model holds.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Context {
+    pub used: u64,
+    pub window: u64,
 }
 
 /// The provider's view of the user's subscription window — every session they

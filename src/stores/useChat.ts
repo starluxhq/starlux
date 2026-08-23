@@ -9,7 +9,15 @@ import {
   selectedModel,
   setAgentDir as saveAgentDir,
 } from "../lib/ipc";
-import { isReady, type Message, type Provider, type RateLimit, type StreamEvent, type Usage } from "../lib/types";
+import {
+  isReady,
+  type Context,
+  type Message,
+  type Provider,
+  type RateLimit,
+  type StreamEvent,
+  type Usage,
+} from "../lib/types";
 
 export type Status = "idle" | "streaming" | "error";
 
@@ -269,6 +277,17 @@ export const useChat = create<ChatState>((set, get) => ({
     }
   },
 }));
+
+/** How full the conversation is now: the most recent answer that said so. An
+ *  older turn's reading is not stale, it is simply about fewer turns than the
+ *  thread now holds. */
+export function currentContext(turns: Turn[]): Context | null {
+  for (let at = turns.length - 1; at >= 0; at--) {
+    const context = turns[at].usage?.context;
+    if (context) return context;
+  }
+  return null;
+}
 
 /** Applies a run owned by the other window, pulling in its history if it is a
  *  thread this window was not already showing. */

@@ -10,6 +10,7 @@ import AgentMode from "../components/AgentMode";
 import Answer from "../components/Answer";
 import Attachments, { type Attachment } from "../components/Attachments";
 import Composer from "../components/Composer";
+import ContextMeter from "../components/ContextMeter";
 import { ModelMenu, ModelTrigger } from "../components/ModelPicker";
 import ProviderHint from "../components/ProviderHint";
 import Rail from "../components/Rail";
@@ -21,7 +22,7 @@ import {
   setBlurHideSuppressed,
   setQuickbarHeight,
 } from "../lib/ipc";
-import { applyMirrored, useChat } from "../stores/useChat";
+import { applyMirrored, currentContext, useChat } from "../stores/useChat";
 
 const THREAD_HEIGHT = 450;
 
@@ -43,6 +44,7 @@ export default function QuickBar() {
     loadProviders,
     newConversation,
   } = useChat();
+  const context = currentContext(turns);
   const scroller = useRef<HTMLDivElement>(null);
   const shell = useRef<HTMLDivElement>(null);
 
@@ -211,6 +213,8 @@ export default function QuickBar() {
           />
 
           <AgentMode dir={agentDir} />
+
+          {context ? <ContextMeter context={context} /> : null}
 
           {model ? (
             <ModelTrigger

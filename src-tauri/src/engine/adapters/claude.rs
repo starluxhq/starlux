@@ -1,8 +1,8 @@
 use serde_json::Value;
 
 use crate::engine::{
-    now, system_prompt, CliAdapter, Invocation, ParseState, RateLimit, RunRequest, StreamEvent,
-    Usage,
+    now, system_prompt, CliAdapter, Context, Invocation, ParseState, RateLimit, RunRequest,
+    StreamEvent, Usage,
 };
 
 /// Namespaced so a user's own agent of the same name is never the one that runs.
@@ -153,7 +153,7 @@ impl CliAdapter for ClaudeAdapter {
                         run_id,
                         text,
                         session_id: state.session_id.clone(),
-                        usage: usage(&value),
+                        usage: usage(&value, state.model.as_deref()),
                     });
                 }
             }
@@ -220,7 +220,30 @@ fn rate_limit(value: &Value, provider_id: &str) -> Option<RateLimit> {
     })
 }
 
-fn usage(value: &Value) -> Option<Usage> {
+/// `modelUsage` is keyed by model, and in agent mode a subagent's model can
+/// appear beside the one that answered. The conversation's context is the
+/// answering model's, so a report we cannot attribute is left unread.
+fn context(value: &Value, model: Option<&str>) -> Option<Context> {
+    let per_model = value.get("modelUsage")?.as_object()?;
+    let entry = match model.and_then(|model| per_model.get(model)) {
+        Some(entry) => entry,
+        None if per_model.len() == 1 => per_model.values().next()?,
+        None => return None,
+    };
+
+    let window = entry.get("contextWindow").and_then(Value::as_u64)?;
+    let count = |name| entry.get(name).and_then(Value::as_u64).unwrap_or(0);
+    // What the next turn will carry: this turn's new input, everything replayed
+    // from cache, and the answer just written.
+    let used = count("inputTokens")
+        + count("cacheReadInputTokens")
+        + count("cacheCreationInputTokens")
+        + count("outputTokens");
+
+    (window > 0).then_some(Context { used, window })
+}
+
+fn usage(value: &Value, model: Option<&str>) -> Option<Usage> {
     let usage = value.get("usage")?;
     Some(Usage {
         input_tokens: usage
@@ -232,6 +255,7 @@ fn usage(value: &Value) -> Option<Usage> {
             .and_then(Value::as_u64)
             .unwrap_or(0),
         cost_usd: value.get("total_cost_usd").and_then(Value::as_f64),
+        context: context(value, model),
     })
 }
 
@@ -410,6 +434,99 @@ mod tests {
         ]);
         assert!(limits(&events).is_empty());
         assert!(!state.ended);
+    }
+
+    fn ending(events: &[StreamEvent]) -> Option<&Usage> {
+        events.iter().find_map(|event| match event {
+            StreamEvent::End { usage, .. } => usage.as_ref(),
+            _ => None,
+        })
+    }
+
+    fn result_with(model_usage: &str) -> String {
+        format!(
+            r#"{{"type":"result","is_error":false,"result":"hi",
+                 "usage":{{"input_tokens":9,"output_tokens":69}},
+                 "modelUsage":{model_usage}}}"#
+        )
+    }
+
+    const HAIKU: &str = "claude-haiku-4-5-20251001";
+
+    #[test]
+    fn reports_how_full_the_context_is() {
+        let entry = format!(
+            r#"{{"{HAIKU}":{{"inputTokens":9,"cacheReadInputTokens":18066,
+                 "cacheCreationInputTokens":8685,"outputTokens":69,"contextWindow":200000}}}}"#
+        );
+        let (events, _) = drain(&[
+            &format!(r#"{{"type":"system","model":"{HAIKU}"}}"#),
+            &result_with(&entry),
+        ]);
+
+        // Everything the next turn carries, not just the tokens this one added.
+        assert_eq!(
+            ending(&events).unwrap().context,
+            Some(Context {
+                used: 26_829,
+                window: 200_000
+            })
+        );
+    }
+
+    #[test]
+    fn attributes_the_context_to_the_model_that_answered() {
+        let entry = format!(
+            r#"{{"{HAIKU}":{{"inputTokens":10,"contextWindow":200000}},
+                 "claude-opus-5":{{"inputTokens":999,"contextWindow":500000}}}}"#
+        );
+        let (events, _) = drain(&[
+            &format!(r#"{{"type":"system","model":"{HAIKU}"}}"#),
+            &result_with(&entry),
+        ]);
+
+        let context = ending(&events).unwrap().context.unwrap();
+        assert_eq!(context.window, 200_000);
+    }
+
+    #[test]
+    fn a_lone_report_is_read_even_when_the_model_went_unnamed() {
+        let (events, _) = drain(&[&result_with(
+            r#"{"some-model":{"inputTokens":7,"contextWindow":1000}}"#,
+        )]);
+        assert_eq!(
+            ending(&events).unwrap().context,
+            Some(Context {
+                used: 7,
+                window: 1000
+            })
+        );
+    }
+
+    #[test]
+    fn a_report_it_cannot_attribute_is_left_unread() {
+        let (events, _) = drain(&[&result_with(
+            r#"{"one":{"inputTokens":1,"contextWindow":1000},
+                "other":{"inputTokens":2,"contextWindow":2000}}"#,
+        )]);
+        assert_eq!(ending(&events).unwrap().context, None);
+    }
+
+    #[test]
+    fn a_window_of_zero_is_not_a_fullness_of_infinity() {
+        let (events, _) = drain(&[&result_with(
+            r#"{"one":{"inputTokens":5,"contextWindow":0}}"#,
+        )]);
+        assert_eq!(ending(&events).unwrap().context, None);
+    }
+
+    #[test]
+    fn a_run_that_reports_no_model_usage_reports_no_context() {
+        let lines: Vec<&str> = FIXTURE.lines().collect();
+        let (events, _) = drain(&lines);
+        let usage = ending(&events).unwrap();
+        assert_eq!(usage.context, None);
+        assert_eq!(usage.output_tokens, 9);
     }
 
     #[test]
