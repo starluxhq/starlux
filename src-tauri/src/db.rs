@@ -6,7 +6,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::engine::{RateLimit, Usage};
+use crate::engine::{Context, RateLimit, Usage};
 
 const SCHEMA_V1: &str = "
 CREATE TABLE conversations (
@@ -136,12 +136,13 @@ impl Db {
         conn.execute(
             "INSERT INTO messages
                (id, conversation_id, role, content, model, tokens_in, tokens_out, cost_usd,
-                error, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                context_used, context_window, error, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              ON CONFLICT(id) DO UPDATE SET
                content = excluded.content, model = excluded.model,
                tokens_in = excluded.tokens_in, tokens_out = excluded.tokens_out,
-               cost_usd = excluded.cost_usd, error = excluded.error",
+               cost_usd = excluded.cost_usd, context_used = excluded.context_used,
+               context_window = excluded.context_window, error = excluded.error",
             params![
                 message.id,
                 conversation_id,
@@ -151,6 +152,16 @@ impl Db {
                 message.usage.as_ref().map(|u| u.input_tokens as i64),
                 message.usage.as_ref().map(|u| u.output_tokens as i64),
                 message.usage.as_ref().and_then(|u| u.cost_usd),
+                message
+                    .usage
+                    .as_ref()
+                    .and_then(|u| u.context)
+                    .map(|c| c.used as i64),
+                message
+                    .usage
+                    .as_ref()
+                    .and_then(|u| u.context)
+                    .map(|c| c.window as i64),
                 message.error,
                 now,
             ],
@@ -228,7 +239,8 @@ impl Db {
         };
 
         let mut stmt = conn.prepare(
-            "SELECT id, role, content, model, tokens_in, tokens_out, cost_usd, error
+            "SELECT id, role, content, model, tokens_in, tokens_out, cost_usd,
+                    context_used, context_window, error
                FROM messages WHERE conversation_id = ?1
               ORDER BY created_at, rowid",
         )?;
@@ -307,12 +319,23 @@ impl Db {
 
 /// One transaction per step, so a migration that fails leaves the database on
 /// its previous version instead of half-built and unopenable.
+/// Answers written before this ran keep NULL, which reads back as "we do not
+/// know how full that conversation was" rather than as an empty one.
+const SCHEMA_V2: &str = "
+ALTER TABLE messages ADD COLUMN context_used INTEGER;
+ALTER TABLE messages ADD COLUMN context_window INTEGER;
+";
+
 fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     let tx = conn.transaction()?;
     let version: i64 = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version < 1 {
         tx.execute_batch(SCHEMA_V1)?;
         tx.pragma_update(None, "user_version", 1)?;
+    }
+    if version < 2 {
+        tx.execute_batch(SCHEMA_V2)?;
+        tx.pragma_update(None, "user_version", 2)?;
     }
     tx.commit()
 }
@@ -333,6 +356,8 @@ fn read_message(row: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
     let input_tokens: Option<i64> = row.get(4)?;
     let output_tokens: Option<i64> = row.get(5)?;
     let cost_usd: Option<f64> = row.get(6)?;
+    let context_used: Option<i64> = row.get(7)?;
+    let context_window: Option<i64> = row.get(8)?;
     Ok(Message {
         id: row.get(0)?,
         role: row.get(1)?,
@@ -344,8 +369,14 @@ fn read_message(row: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
                 input_tokens: input as u64,
                 output_tokens: output as u64,
                 cost_usd,
+                context: context_used
+                    .zip(context_window)
+                    .map(|(used, window)| Context {
+                        used: used as u64,
+                        window: window as u64,
+                    }),
             }),
-        error: row.get(7)?,
+        error: row.get(9)?,
     })
 }
 
@@ -446,6 +477,10 @@ mod tests {
                     input_tokens: 12,
                     output_tokens: 34,
                     cost_usd: Some(0.5),
+                    context: Some(Context {
+                        used: 26_829,
+                        window: 200_000,
+                    }),
                 }),
                 model: Some("opus".to_owned()),
                 ..message("r1", "assistant", "They spin.")
@@ -459,6 +494,66 @@ mod tests {
         assert_eq!(roles, ["user", "assistant"]);
         assert_eq!(thread.messages[1].model.as_deref(), Some("opus"));
         assert_eq!(thread.messages[1].usage.as_ref().unwrap().output_tokens, 34);
+        assert_eq!(
+            thread.messages[1].usage.as_ref().unwrap().context,
+            Some(Context {
+                used: 26_829,
+                window: 200_000
+            })
+        );
+    }
+
+    #[test]
+    fn an_answer_stored_without_a_context_reading_reports_none() {
+        let db = db();
+        db.ensure_conversation("c1", "q", "claude-cli", None)
+            .unwrap();
+        db.add_message(
+            "c1",
+            &Message {
+                usage: Some(Usage {
+                    input_tokens: 1,
+                    output_tokens: 2,
+                    cost_usd: None,
+                    context: None,
+                }),
+                ..message("r1", "assistant", "a")
+            },
+        )
+        .unwrap();
+
+        let thread = db.thread("c1").unwrap().unwrap();
+        assert_eq!(thread.messages[0].usage.as_ref().unwrap().context, None);
+    }
+
+    // The columns arrived in v2, so a database written before them has to gain
+    // them without losing the answers already in it.
+    #[test]
+    fn a_v1_database_gains_the_context_columns_and_keeps_its_messages() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        {
+            let tx = conn.transaction().unwrap();
+            tx.execute_batch(SCHEMA_V1).unwrap();
+            tx.pragma_update(None, "user_version", 1).unwrap();
+            tx.execute(
+                "INSERT INTO conversations (id, title, provider_id, created_at, updated_at)
+                 VALUES ('c1', 'old', 'claude-cli', 1, 1)",
+                [],
+            )
+            .unwrap();
+            tx.execute(
+                "INSERT INTO messages (id, conversation_id, role, content, created_at)
+                 VALUES ('m1', 'c1', 'assistant', 'written before v2', 1)",
+                [],
+            )
+            .unwrap();
+            tx.commit().unwrap();
+        }
+
+        let db = Db::init(conn).unwrap();
+        let thread = db.thread("c1").unwrap().unwrap();
+        assert_eq!(thread.messages[0].text, "written before v2");
+        assert_eq!(thread.messages[0].usage, None);
     }
 
     #[test]

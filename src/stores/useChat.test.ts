@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { useChat } from "./useChat";
+import { currentContext, useChat } from "./useChat";
 import type { RateLimit } from "../lib/types";
 
 const RUN = "run-1";
@@ -110,5 +110,28 @@ describe("apply", () => {
       .apply({ kind: "meta", runId: RUN, sessionId: "sess-1", model: "claude-opus-5" });
     expect(useChat.getState().turns[1].model).toBe("claude-opus-5");
     expect(useChat.getState().model).toBe("opus");
+  });
+});
+
+describe("currentContext", () => {
+  const turn = (id: string, context?: { used: number; window: number }) => ({
+    id,
+    role: "assistant" as const,
+    text: "",
+    usage: { inputTokens: 1, outputTokens: 1, ...(context && { context }) },
+  });
+
+  it("is null until an answer has reported one", () => {
+    expect(currentContext([])).toBeNull();
+    expect(currentContext([turn("a")])).toBeNull();
+  });
+
+  it("takes the most recent reading, which covers the most turns", () => {
+    const turns = [
+      turn("a", { used: 10, window: 100 }),
+      turn("b", { used: 40, window: 100 }),
+      turn("c"),
+    ];
+    expect(currentContext(turns)?.used).toBe(40);
   });
 });

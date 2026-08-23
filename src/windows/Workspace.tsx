@@ -6,6 +6,7 @@ import ArtifactViewer from "../components/ArtifactViewer";
 import Attachments, { type Attachment } from "../components/Attachments";
 import Composer from "../components/Composer";
 import ConversationList from "../components/ConversationList";
+import ContextMeter from "../components/ContextMeter";
 import { ModelMenu, ModelTrigger } from "../components/ModelPicker";
 import ProviderHint from "../components/ProviderHint";
 import Rail from "../components/Rail";
@@ -13,7 +14,7 @@ import { PICKER } from "../lib/models";
 import { onConversationsChanged, onFocusConversation, onStream } from "../lib/events";
 import { activeConversation } from "../lib/ipc";
 import { useArtifact } from "../stores/useArtifact";
-import { applyMirrored, useChat } from "../stores/useChat";
+import { applyMirrored, currentContext, useChat } from "../stores/useChat";
 import { useConversations } from "../stores/useConversations";
 
 export default function Workspace() {
@@ -37,6 +38,7 @@ export default function Workspace() {
     send,
     stop,
   } = useChat();
+  const context = currentContext(turns);
   const { items, load, remove } = useConversations();
   const { expanded, collapse } = useArtifact();
 
@@ -217,6 +219,8 @@ export default function Workspace() {
               maxRows={8}
               marker={false}
             />
+
+            {context ? <ContextMeter context={context} /> : null}
 
             {model ? (
               <ModelTrigger

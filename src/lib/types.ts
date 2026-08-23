@@ -2,6 +2,14 @@ export interface Usage {
   inputTokens: number;
   outputTokens: number;
   costUsd?: number;
+  context?: Context;
+}
+
+/** How much of the model's window the conversation now occupies. Both halves
+ *  are the provider's own numbers, so this is arithmetic rather than a guess. */
+export interface Context {
+  used: number;
+  window: number;
 }
 
 /** The provider's view of the user's whole subscription window — every session
