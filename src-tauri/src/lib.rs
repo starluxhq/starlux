@@ -91,6 +91,8 @@ pub fn run() {
             commands::rate_limits,
             commands::selected_model,
             commands::set_selected_model,
+            commands::sidebar_collapsed,
+            commands::set_sidebar_collapsed,
             commands::store_artifact,
             commands::active_conversation,
             commands::list_conversations,

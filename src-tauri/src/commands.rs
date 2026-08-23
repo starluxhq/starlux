@@ -95,6 +95,23 @@ pub async fn set_selected_model(
     .await
 }
 
+/// Remembered across restarts so the Workspace comes back the way it was left.
+#[tauri::command]
+pub async fn sidebar_collapsed(app: AppHandle) -> Result<bool, String> {
+    db::query(&app, |db| {
+        Ok(db.setting(db::SIDEBAR_COLLAPSED)?.as_deref() == Some("1"))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn set_sidebar_collapsed(app: AppHandle, collapsed: bool) -> Result<(), String> {
+    db::query(&app, move |db| {
+        db.set_setting(db::SIDEBAR_COLLAPSED, collapsed.then_some("1"))
+    })
+    .await
+}
+
 #[tauri::command]
 pub fn active_conversation(state: tauri::State<'_, AppState>) -> Option<String> {
     state.active_conversation()
