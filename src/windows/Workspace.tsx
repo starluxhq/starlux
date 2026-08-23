@@ -9,10 +9,12 @@ import ConversationList from "../components/ConversationList";
 import ContextMeter from "../components/ContextMeter";
 import { ModelMenu, ModelTrigger } from "../components/ModelPicker";
 import ProviderHint from "../components/ProviderHint";
+import Question from "../components/Question";
 import Rail from "../components/Rail";
 import { PICKER } from "../lib/models";
 import { onConversationsChanged, onFocusConversation, onStream } from "../lib/events";
 import { activeConversation } from "../lib/ipc";
+import { railState } from "../lib/turn";
 import { useArtifact } from "../stores/useArtifact";
 import { applyMirrored, currentContext, useChat } from "../stores/useChat";
 import { useConversations } from "../stores/useConversations";
@@ -28,6 +30,7 @@ export default function Workspace() {
     model,
     turns,
     status,
+    runId,
     conversationId,
     agentDir,
     loadProviders,
@@ -162,21 +165,18 @@ export default function Workspace() {
               Light that left a long time ago, arriving one token at a time.
             </p>
           ) : (
-            turns.map((turn) => (
-              <article key={turn.id} className="flex gap-4">
-                <Rail
-                  status={turn.role === "assistant" ? status : "idle"}
-                  className="mt-1 mb-1"
-                />
-                <div className="min-w-0 flex-1">
-                  {turn.role === "user" ? (
-                    <p className="text-[13.5px] leading-[1.65] text-muted">{turn.text}</p>
-                  ) : (
+            turns.map((turn) =>
+              turn.role === "user" ? (
+                <Question key={turn.id} text={turn.text} />
+              ) : (
+                <article key={turn.id} className="flex gap-4">
+                  <Rail status={railState(turn, runId, status)} className="mt-1 mb-1" />
+                  <div className="min-w-0 flex-1">
                     <Answer turn={turn} />
-                  )}
-                </div>
-              </article>
-            ))
+                  </div>
+                </article>
+              ),
+            )
           )}
         </div>
 

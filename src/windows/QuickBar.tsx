@@ -13,6 +13,7 @@ import Composer from "../components/Composer";
 import ContextMeter from "../components/ContextMeter";
 import { ModelMenu, ModelTrigger } from "../components/ModelPicker";
 import ProviderHint from "../components/ProviderHint";
+import Question from "../components/Question";
 import Rail from "../components/Rail";
 import { onAsk, onStream } from "../lib/events";
 import { PICKER } from "../lib/models";
@@ -22,6 +23,7 @@ import {
   setBlurHideSuppressed,
   setQuickbarHeight,
 } from "../lib/ipc";
+import { railState } from "../lib/turn";
 import { applyMirrored, currentContext, useChat } from "../stores/useChat";
 
 const THREAD_HEIGHT = 450;
@@ -38,6 +40,7 @@ export default function QuickBar() {
     agentDir,
     turns,
     status,
+    runId,
     send,
     stop,
     selectModel,
@@ -133,8 +136,6 @@ export default function QuickBar() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [status, stop, newConversation, picking]);
 
-  const answers = turns.filter((turn) => turn.role === "assistant");
-
   const submit = () => {
     void send(draft);
     setDraft("");
@@ -174,14 +175,20 @@ export default function QuickBar() {
         {hasThread ? (
           <div
             ref={scroller}
-            className="flex min-h-0 flex-1 gap-3 overflow-y-auto border-b border-white/6 px-4 py-4"
+            className="min-h-0 flex-1 space-y-4 overflow-y-auto border-b border-white/6 px-4 py-4"
           >
-            <Rail status={status} className="mb-1" />
-            <div className="min-w-0 flex-1 space-y-5">
-              {answers.map((turn) => (
-                <Answer key={turn.id} turn={turn} />
-              ))}
-            </div>
+            {turns.map((turn) =>
+              turn.role === "user" ? (
+                <Question key={turn.id} text={turn.text} />
+              ) : (
+                <article key={turn.id} className="flex gap-3">
+                  <Rail status={railState(turn, runId, status)} className="mb-1" />
+                  <div className="min-w-0 flex-1">
+                    <Answer turn={turn} />
+                  </div>
+                </article>
+              ),
+            )}
           </div>
         ) : null}
 
