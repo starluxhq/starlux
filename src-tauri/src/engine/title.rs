@@ -52,7 +52,8 @@ async fn write_title(
         return Ok(None);
     };
 
-    let Some(title) = clean(&run(adapter.title_invocation(&excerpt(question))).await?) else {
+    let printed = run(adapter.title_invocation(&excerpt(question))).await?;
+    let Some(title) = clean(&adapter.title_text(&printed)) else {
         return Ok(None);
     };
 
@@ -67,7 +68,12 @@ async fn run(invocation: Invocation) -> Result<String, String> {
     let mut command = Command::new(&invocation.program);
     command
         .args(&invocation.args)
-        .stdin(Stdio::piped())
+        .envs(invocation.env.iter().cloned())
+        .stdin(if invocation.stdin.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true);

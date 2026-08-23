@@ -1,7 +1,7 @@
 mod artifacts;
 mod commands;
 mod db;
-mod engine;
+pub mod engine;
 mod platform;
 mod shell_env;
 mod shortcut;

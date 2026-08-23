@@ -105,8 +105,12 @@ export interface Provider {
   id: string;
   name: string;
   binary: string;
+  /** What to run to sign in, in full — `opencode login` is not a command. */
+  login: string;
   availability: Availability;
   models: string[];
+  /** Whether this provider has web tools to grant at all. */
+  web: boolean;
 }
 
 export const isReady = (provider: Provider) => provider.availability.state === "ready";
@@ -115,6 +119,7 @@ export type SpectralClass = "a" | "f" | "g" | "k" | "m";
 
 const SPECTRAL_CLASSES: Record<string, SpectralClass> = {
   "claude-cli": "k",
+  "opencode-cli": "g",
   "gemini-cli": "a",
   "openai-api": "f",
   "ollama-local": "g",

@@ -51,6 +51,9 @@ export default function Workspace() {
     stop,
   } = useChat();
   const context = currentContext(turns);
+  // A provider with no web tools has no grant to offer, so the toggle is not
+  // shown rather than shown and ignored.
+  const grantable = providers.find((provider) => provider.id === providerId)?.web ?? false;
   const { items, load, rename, pin, remove } = useConversations();
   const { expanded, collapse } = useArtifact();
 
@@ -160,7 +163,7 @@ export default function Workspace() {
             web={web}
             onPick={() => void pickFolder()}
             onClear={() => void setAgentDir(null)}
-            onWeb={(on) => void setWeb(on)}
+            onWeb={grantable ? (on) => void setWeb(on) : undefined}
           />
           {platform === "macos" ? null : <WindowControls />}
         </div>

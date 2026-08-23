@@ -204,6 +204,14 @@ pub struct Invocation {
     pub env: Vec<(String, String)>,
 }
 
+/// Where a provider re-sends a whole block each time it grows rather than the
+/// piece it added: which block, and where it starts in `text`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Block {
+    pub id: String,
+    pub at: usize,
+}
+
 #[derive(Debug, Default)]
 pub struct ParseState {
     pub session_id: Option<String>,
@@ -211,6 +219,10 @@ pub struct ParseState {
     pub text: String,
     pub saw_delta: bool,
     pub ended: bool,
+    pub block: Option<Block>,
+    /// Totalled as the run goes, for providers that report a turn in pieces
+    /// rather than once at the end.
+    pub usage: Option<Usage>,
 }
 
 pub trait CliAdapter: Send + Sync {
@@ -223,4 +235,18 @@ pub trait CliAdapter: Send + Sync {
     fn title_invocation(&self, question: &str) -> Invocation;
 
     fn parse_line(&self, line: &str, state: &mut ParseState, req: &RunRequest) -> Vec<StreamEvent>;
+
+    /// Called once the CLI's stdout has closed. Providers whose stream carries a
+    /// final event have nothing to do here; those that simply stop talking end
+    /// the turn from this. Returning nothing leaves `cli` to report the exit,
+    /// which is what a run that produced no answer should say.
+    fn finish(&self, _state: &mut ParseState, _req: &RunRequest) -> Vec<StreamEvent> {
+        Vec::new()
+    }
+
+    /// What the naming run actually said, pulled out of whatever it printed.
+    /// Plain-text output needs no unwrapping; a CLI that only speaks JSON does.
+    fn title_text(&self, stdout: &str) -> String {
+        stdout.to_owned()
+    }
 }
