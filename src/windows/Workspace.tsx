@@ -147,26 +147,6 @@ export default function Workspace() {
           platform === "macos" ? "pl-[82px]" : "pl-5"
         }`}
       >
-        {collapsed ? (
-          <button
-            type="button"
-            onClick={() => showSidebar(true)}
-            aria-label="Show conversations"
-            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-white/6 hover:text-ink"
-          >
-            <svg viewBox="0 0 16 16" aria-hidden className="size-3.5">
-              <path
-                d="M6.5 4l4 4-4 4"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={1.4}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
-        ) : null}
-
         <span data-tauri-drag-region className="font-serif text-[15px] tracking-tight">
           Starlux
         </span>
@@ -182,30 +162,41 @@ export default function Workspace() {
       </div>
 
       <div className="flex min-h-0 flex-1">
-        {/* The list slides away rather than squashing: a fixed-width column
-            inside a wrapper that is all that changes width. */}
+        {/* Closing it leaves a strip rather than nothing: the toolbar stays put
+            and the list is drawn back behind it, at its full width throughout
+            so the rows never reflow on the way out. */}
         <aside
           className={`shrink-0 overflow-hidden border-r border-white/6 bg-dust/60 ${
             animate ? "transition-[width] duration-200 ease-out motion-reduce:transition-none" : ""
-          } ${collapsed ? "w-0 border-r-0" : "w-64"}`}
+          } ${collapsed ? "w-12" : "w-64"}`}
         >
           <div className="flex h-full w-64 flex-col">
-            <SidebarToolbar onNew={startConversation} onCollapse={() => showSidebar(false)} />
-            <p className="px-5 pt-3 pb-3 font-mono text-[10px] tracking-wider text-faint uppercase">
-              Conversations
-            </p>
-            <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-              <ConversationList
-                items={items}
-                activeId={conversationId}
-                onOpen={(id) => void openConversation(id)}
-                onRename={(id, title) => void rename(id, title)}
-                onPin={(id, pinned) => void pin(id, pinned)}
-                onDelete={(id) => {
-                  if (id === conversationId) newConversation();
-                  void remove(id);
-                }}
-              />
+            <SidebarToolbar
+              collapsed={collapsed}
+              onNew={startConversation}
+              onToggle={() => showSidebar(collapsed)}
+            />
+            <div
+              className={`flex min-h-0 flex-1 flex-col ${
+                animate ? "transition-opacity duration-150 motion-reduce:transition-none" : ""
+              } ${collapsed ? "pointer-events-none opacity-0" : "opacity-100"}`}
+            >
+              <p className="px-5 pt-3 pb-3 font-mono text-[10px] tracking-wider text-faint uppercase">
+                Conversations
+              </p>
+              <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+                <ConversationList
+                  items={items}
+                  activeId={conversationId}
+                  onOpen={(id) => void openConversation(id)}
+                  onRename={(id, title) => void rename(id, title)}
+                  onPin={(id, pinned) => void pin(id, pinned)}
+                  onDelete={(id) => {
+                    if (id === conversationId) newConversation();
+                    void remove(id);
+                  }}
+                />
+              </div>
             </div>
           </div>
         </aside>
