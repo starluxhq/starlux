@@ -21,7 +21,6 @@ import { activeConversation, saveSidebarCollapsed, sidebarCollapsed } from "../l
 import { useArtifact } from "../stores/useArtifact";
 import { currentContext, useChat } from "../stores/useChat";
 import { useConversations } from "../stores/useConversations";
-import { useSettings } from "../stores/useSettings";
 
 export default function Workspace() {
   const [draft, setDraft] = useState("");
@@ -52,19 +51,17 @@ export default function Workspace() {
     stop,
   } = useChat();
   const context = currentContext(turns);
-  const { tools, loadTools } = useSettings();
   const { items, load, rename, pin, remove } = useConversations();
   const { expanded, collapse } = useArtifact();
 
   useEffect(() => {
     void loadProviders();
     void load();
-    void loadTools();
     void activeConversation().then((id) => {
       if (id) void openConversation(id);
     });
     void sidebarCollapsed().then(setCollapsed);
-  }, [loadProviders, load, loadTools, openConversation]);
+  }, [loadProviders, load, openConversation]);
 
   useMirroredWindow();
   useEffect(() => onConversationsChanged(() => void load()), [load]);
@@ -166,7 +163,6 @@ export default function Workspace() {
         <div className="ml-auto flex min-w-0 items-center gap-4">
           <AgentMode
             dir={agentDir}
-            tools={tools}
             onPick={() => void pickFolder()}
             onClear={() => void setAgentDir(null)}
           />

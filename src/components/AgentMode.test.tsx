@@ -21,14 +21,23 @@ describe("AgentMode", () => {
     expect(container.textContent).toBe("");
   });
 
-  // The tools are granted in Settings, for the whole app. Both windows report
-  // what stands; neither is where it changes.
-  it("never offers to change the tools, even where the folder can be picked", () => {
+  // The tools are granted in Settings, for the whole app. Where they are shown
+  // they are only ever reported; there is no control here to change them.
+  it("never offers to change the tools", () => {
     render(<AgentMode dir={null} tools={WEB} onPick={vi.fn()} />);
 
     expect(screen.getByText("Web")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /web/i })).toBeNull();
     expect(screen.getAllByRole("button")).toHaveLength(1);
+  });
+
+  // The Workspace has the settings in its own sidebar, so a badge repeating
+  // what that panel says is chrome. It passes no tools and shows none.
+  it("says nothing about the tools where it was given none", () => {
+    render(<AgentMode dir="/home/a/work" onPick={vi.fn()} />);
+
+    expect(screen.getByText("work")).toBeTruthy();
+    expect(screen.queryByText("Web")).toBeNull();
   });
 
   it("shows the network as reached when only one of the two tools is on", () => {
