@@ -56,7 +56,7 @@ pub async fn rate_limits(app: AppHandle) -> Result<Vec<RateLimit>, String> {
     db::query(&app, |db| db.rate_limits()).await
 }
 
-#[derive(serde::Serialize)]
+#[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Selection {
     provider_id: String,
@@ -86,15 +86,29 @@ pub async fn selected_model(app: AppHandle) -> Result<Option<Selection>, String>
 #[tauri::command]
 pub async fn set_selected_model(
     app: AppHandle,
+    window: Window,
     provider_id: String,
     model: String,
 ) -> Result<(), String> {
+    let chosen = Selection {
+        provider_id: provider_id.clone(),
+        model: model.clone(),
+    };
     db::query(&app, move |db| {
         db.set_setting(db::SELECTED_PROVIDER, Some(&provider_id))?;
         db.set_setting(db::SELECTED_MODEL, Some(&model))?;
         db.remember_model(&provider_id, &model)
     })
-    .await
+    .await?;
+
+    // To the other window only: the one that made the choice already has it,
+    // and telling it back would have the two windows answering each other.
+    let _ = app.emit_to(
+        windows::peer_of(window.label()),
+        db::SELECTION_EVENT,
+        chosen,
+    );
+    Ok(())
 }
 
 /// What each provider was last asked for. Picking a provider still has to pick

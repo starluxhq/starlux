@@ -82,6 +82,16 @@ pub fn hide_quickbar_on_blur(app: &AppHandle) {
     }
 }
 
+/// The other of the two windows. Both hold state the core is the source of
+/// truth for, so a change made in one has to reach the other.
+pub fn peer_of(label: &str) -> &'static str {
+    if label == QUICKBAR {
+        WORKSPACE
+    } else {
+        QUICKBAR
+    }
+}
+
 pub fn open_workspace(app: &AppHandle) -> tauri::Result<()> {
     let workspace = window(app, WORKSPACE)?;
     let _ = hide_quickbar(app);
@@ -99,4 +109,20 @@ pub fn hide_workspace(app: &AppHandle) -> tauri::Result<()> {
     window(app, WORKSPACE)?.hide()?;
     imp::after_workspace_hidden(app);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Load-bearing for both things one window has to tell the other: a run it
+    /// started, and the model it chose for the next one.
+    #[test]
+    fn each_window_names_the_other_as_its_peer() {
+        assert_eq!(peer_of(QUICKBAR), WORKSPACE);
+        assert_eq!(peer_of(WORKSPACE), QUICKBAR);
+        // Anything else is the bar's business: a run with no window of its own
+        // must still reach the one that can show it.
+        assert_eq!(peer_of("somewhere-else"), QUICKBAR);
+    }
 }

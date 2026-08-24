@@ -54,6 +54,10 @@ const TITLE_MAX_CHARS: usize = 64;
 
 /// Emitted after every write so open sidebars re-read the list.
 pub const CHANGED_EVENT: &str = "starlux://conversations";
+/// Emitted to the *other* window when this one changes what the next run asks
+/// for. The choice outlives any one conversation, so both windows hold it, and
+/// a window that never heard about the change shows a stale one.
+pub const SELECTION_EVENT: &str = "starlux://selection";
 
 /// The thread the Workspace comes back to after a restart.
 pub const ACTIVE_CONVERSATION: &str = "active_conversation";

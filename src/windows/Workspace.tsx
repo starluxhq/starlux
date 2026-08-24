@@ -15,10 +15,11 @@ import WindowControls from "../components/WindowControls";
 import { PICKER } from "../lib/models";
 import { platform } from "../lib/platform";
 import type { Attachment } from "../lib/types";
-import { onConversationsChanged, onFocusConversation, onStream } from "../lib/events";
+import { onConversationsChanged, onFocusConversation } from "../lib/events";
+import { useMirroredWindow } from "../lib/mirror";
 import { activeConversation, saveSidebarCollapsed, sidebarCollapsed } from "../lib/ipc";
 import { useArtifact } from "../stores/useArtifact";
-import { applyMirrored, currentContext, useChat } from "../stores/useChat";
+import { currentContext, useChat } from "../stores/useChat";
 import { useConversations } from "../stores/useConversations";
 
 export default function Workspace() {
@@ -68,7 +69,7 @@ export default function Workspace() {
     void sidebarCollapsed().then(setCollapsed);
   }, [loadProviders, load, openConversation]);
 
-  useEffect(() => onStream(applyMirrored), []);
+  useMirroredWindow();
   useEffect(() => onConversationsChanged(() => void load()), [load]);
   useEffect(
     () =>

@@ -243,10 +243,97 @@ describe("choosing a provider and a model", () => {
     expect(useChat.getState().sessionId).toBe("sess-claude");
   });
 
+  // Both windows hold the choice, and it is written once. The window told
+  // about it must not write it back, or the two answer each other forever.
+  it("adopts the other window's choice without writing it back", () => {
+    useChat.setState({ sessionId: "sess-claude" });
+    useChat.getState().adoptSelection("opencode-cli", "opencode-go/glm-5.3");
+
+    const { providerId, model, sessionId, lastModel } = useChat.getState();
+    expect({ providerId, model, sessionId }).toEqual({
+      providerId: "opencode-cli",
+      model: "opencode-go/glm-5.3",
+      sessionId: null,
+    });
+    expect(lastModel["opencode-cli"]).toBe("opencode-go/glm-5.3");
+    expect(ipc.saveSelectedModel).not.toHaveBeenCalled();
+  });
+
+  it("keeps this window's session when only the model moved", () => {
+    useChat.setState({ sessionId: "sess-claude" });
+    useChat.getState().adoptSelection("claude-cli", "sonnet");
+    expect(useChat.getState().sessionId).toBe("sess-claude");
+  });
+
   it("remembers a model against the provider it belongs to", () => {
     useChat.getState().selectModel("sonnet");
     expect(useChat.getState().lastModel).toEqual({ "claude-cli": "sonnet" });
     expect(ipc.saveSelectedModel).toHaveBeenCalledWith("claude-cli", "sonnet");
+  });
+});
+
+describe("opening a conversation", () => {
+  const thread = (over: Record<string, unknown> = {}) => ({
+    conversation: {
+      id: "conv-1",
+      title: "old",
+      providerId: "claude-cli",
+      sessionId: "sess-claude",
+      model: "claude-opus-5",
+      agentDir: null,
+      web: false,
+      updatedAt: 1,
+      pinned: false,
+      ...over,
+    },
+    messages: [],
+  });
+
+  beforeEach(() => {
+    useChat.setState({ providers: catalog() as never, lastModel: {} });
+  });
+
+  // Reproduces the report: pick a model, expand, and the picker is showing
+  // something else. Adopting the thread's provider without its model leaves a
+  // pair that never existed together — and asks that provider for a model that
+  // is not its own.
+  it("brings a model belonging to the provider it adopts", async () => {
+    useChat.setState({ providerId: "opencode-cli", model: "opencode-go/glm-5.3" });
+    ipc.loadConversation.mockResolvedValueOnce(thread() as never);
+
+    await useChat.getState().openConversation("conv-1");
+
+    const { providerId, model } = useChat.getState();
+    expect(providerId).toBe("claude-cli");
+    expect(catalog()[0].models).toContain(model);
+  });
+
+  it("returns to the model that provider was last asked for", async () => {
+    useChat.setState({ providerId: "opencode-cli", lastModel: { "claude-cli": "sonnet" } });
+    ipc.loadConversation.mockResolvedValueOnce(thread() as never);
+
+    await useChat.getState().openConversation("conv-1");
+    expect(useChat.getState().model).toBe("sonnet");
+  });
+
+  // The thread records the exact build that answered — `claude-opus-5` — while
+  // the picker offers aliases. One is a record, the other a choice.
+  it("does not mistake what answered for what to ask for", async () => {
+    ipc.loadConversation.mockResolvedValueOnce(thread() as never);
+    await useChat.getState().openConversation("conv-1");
+    expect(useChat.getState().model).not.toBe("claude-opus-5");
+  });
+
+  it("leaves the selection alone when the thread is already the one on screen", async () => {
+    useChat.setState({
+      conversationId: "conv-1",
+      providerId: "claude-cli",
+      model: "haiku",
+    });
+    ipc.loadConversation.mockResolvedValueOnce(thread() as never);
+
+    await useChat.getState().openConversation("conv-1");
+    expect(useChat.getState().model).toBe("haiku");
   });
 });
 
