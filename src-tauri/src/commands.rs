@@ -8,6 +8,7 @@ use crate::engine::cli::{self, Runs};
 use crate::engine::providers::{self, Provider};
 use crate::engine::sink::Sink;
 use crate::engine::title;
+use crate::engine::tools::{self, Tools};
 use crate::engine::{self, RateLimit, RunRequest, StreamEvent};
 use crate::state::AppState;
 use crate::windows;
@@ -222,14 +223,36 @@ pub async fn set_agent_dir(app: AppHandle, id: String, dir: Option<String>) -> R
     Ok(())
 }
 
-/// Lets a conversation's runs reach the network, or takes it back. Stored
-/// beside the folder and read back the same way, so neither window can spend a
-/// grant the other revoked.
+/// What every run may reach beyond the model itself. One answer for the app
+/// rather than one per conversation: a question asked from the bar reaches
+/// exactly what one asked from the Workspace does.
 #[tauri::command]
-pub async fn set_web(app: AppHandle, id: String, web: bool) -> Result<(), String> {
-    db::query(&app, move |db| db.set_web(&id, web)).await?;
-    let _ = app.emit(db::CHANGED_EVENT, ());
-    Ok(())
+pub async fn tools(app: AppHandle) -> Result<Tools, String> {
+    db::query(&app, |db| db.tools()).await
+}
+
+/// Grants a single tool, or takes it back. The id is checked against the ones
+/// Starlux defines: a window naming something else is not a grant, and a row
+/// nobody can read back would be a grant that never applies.
+#[tauri::command]
+pub async fn set_tool(
+    app: AppHandle,
+    window: Window,
+    id: String,
+    on: bool,
+) -> Result<Tools, String> {
+    if !tools::ALL.contains(&id.as_str()) {
+        return Err(format!("`{id}` is not a tool Starlux knows"));
+    }
+    let granted = db::query(&app, move |db| {
+        db.set_tool(&id, on)?;
+        db.tools()
+    })
+    .await?;
+
+    // To the other window only, for the reason `set_selected_model` gives.
+    let _ = app.emit_to(windows::peer_of(window.label()), db::TOOLS_EVENT, granted);
+    Ok(granted)
 }
 
 #[tauri::command]
@@ -263,22 +286,20 @@ pub async fn run_prompt(
     // Written before the process starts, so a run that dies still leaves the
     // question in history rather than a conversation that never happened.
     //
-    // The stored grant comes back out because it, not the request, decides what
-    // this run may reach: an existing conversation keeps the grant it was given,
-    // and a new one records the one it arrived with.
+    // Both halves of the grant come back out of the database because they, not
+    // the request, decide what this run may reach: the folder is the one this
+    // conversation was given, and the tools are the ones the app is set to.
     let id = conversation_id.clone();
     let named_by = provider_id.clone();
-    let web = request.web;
-    let (started, granted) = db::query(&app, move |db| {
-        let started =
-            db.ensure_conversation(&id, &prompt, &provider_id, agent_dir.as_deref(), web)?;
+    let (started, folder, granted) = db::query(&app, move |db| {
+        let started = db.ensure_conversation(&id, &prompt, &provider_id, agent_dir.as_deref())?;
         db.set_setting(db::ACTIVE_CONVERSATION, Some(&id))?;
         db.add_message(&id, &question)?;
-        Ok((started, db.grant(&id)?))
+        Ok((started, db.agent_dir(&id)?, db.tools()?))
     })
     .await?;
-    request.agent_dir = granted.0.map(PathBuf::from);
-    request.web = granted.1;
+    request.agent_dir = folder.map(PathBuf::from);
+    request.tools = granted;
     let _ = app.emit(db::CHANGED_EVENT, ());
 
     app.state::<AppState>()

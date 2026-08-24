@@ -7,6 +7,8 @@ import type {
   Selection,
   StreamEvent,
   Thread,
+  ToolId,
+  Tools,
 } from "./types";
 
 export const hideQuickBar = () => invoke<void>("hide_quickbar");
@@ -38,11 +40,17 @@ export const listConversations = () => invoke<Conversation[]>("list_conversation
 export const loadConversation = (id: string) => invoke<Thread | null>("load_conversation", { id });
 export const deleteConversation = (id: string) => invoke<void>("delete_conversation", { id });
 
-/** `null` takes the folder back. The web grant is separate and unaffected. */
+/** `null` takes the folder back. The tools are granted app-wide and unaffected. */
 export const setAgentDir = (id: string, dir: string | null) =>
   invoke<void>("set_agent_dir", { id, dir });
 
-export const setWeb = (id: string, web: boolean) => invoke<void>("set_web", { id, web });
+/** What every run may reach. Not a property of a conversation, which is why it
+ *  is read and written without one. */
+export const tools = () => invoke<Tools>("tools");
+
+/** Answers with the whole grant rather than the one bit that changed, so the
+ *  window never has to reconstruct what it should now be. */
+export const setTool = (id: ToolId, on: boolean) => invoke<Tools>("set_tool", { id, on });
 
 export const renameConversation = (id: string, title: string) =>
   invoke<void>("rename_conversation", { id, title });

@@ -12,7 +12,7 @@ const provider = (availability: Availability, over: Partial<Provider> = {}): Pro
   login: "claude login",
   availability,
   models: ["opus", "sonnet"],
-  web: true,
+  tools: ["webSearch", "webFetch"],
   ...over,
 });
 

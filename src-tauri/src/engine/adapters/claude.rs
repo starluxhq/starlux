@@ -1,14 +1,16 @@
 use base64::Engine as _;
 use serde_json::Value;
 
+use crate::engine::tools::{Tools, WEB_FETCH, WEB_SEARCH};
 use crate::engine::{
     now, system_prompt, CliAdapter, Context, Invocation, Loaded, ParseState, RateLimit, RunRequest,
     StreamEvent, Usage,
 };
 
-/// Named exactly, not by category: an allowlist that grew with the provider
-/// would hand over whatever it added next.
-const WEB_TOOLS: [&str; 2] = ["WebSearch", "WebFetch"];
+/// Claude's names for the tools Starlux grants. Named exactly, not by category:
+/// an allowlist that grew with the provider would hand over whatever it added
+/// next.
+const NAMES: [(&str, &str); 2] = [(WEB_SEARCH, "WebSearch"), (WEB_FETCH, "WebFetch")];
 
 /// Namespaced so a user's own agent of the same name is never the one that runs.
 const CHAT_AGENT: &str = "starlux-chat";
@@ -62,7 +64,7 @@ impl CliAdapter for ClaudeAdapter {
         if req.agent_dir.is_none() {
             args.push("--strict-mcp-config".into());
             args.push("--agents".into());
-            args.push(chat_agent(req.web));
+            args.push(chat_agent(&req.tools));
             args.push("--agent".into());
             args.push(CHAT_AGENT.into());
         } else {
@@ -75,9 +77,10 @@ impl CliAdapter for ClaudeAdapter {
             args.push("acceptEdits".into());
         }
 
-        if req.web {
+        let granted = granted(&req.tools);
+        if !granted.is_empty() {
             args.push("--allowedTools".into());
-            args.extend(WEB_TOOLS.iter().map(|tool| (*tool).to_owned()));
+            args.extend(granted.iter().map(|tool| (*tool).to_owned()));
         }
 
         // Plain text on stdin is the whole prompt when nothing is attached.
@@ -268,12 +271,21 @@ fn image_type(mime: &str) -> Option<&'static str> {
     }
 }
 
-fn chat_agent(web: bool) -> String {
+/// Only the tools actually granted, under the names this CLI knows them by.
+fn granted(tools: &Tools) -> Vec<&'static str> {
+    NAMES
+        .iter()
+        .filter(|(id, _)| tools.get(id))
+        .map(|(_, name)| *name)
+        .collect()
+}
+
+fn chat_agent(tools: &Tools) -> String {
     serde_json::json!({
         CHAT_AGENT: {
             "description": "Answers questions from the Starlux bar",
             "prompt": system_prompt::chat(),
-            "tools": if web { WEB_TOOLS.to_vec() } else { Vec::new() },
+            "tools": granted(tools),
         }
     })
     .to_string()
@@ -391,7 +403,7 @@ mod tests {
             session_id: None,
             model: None,
             agent_dir: None,
-            web: false,
+            tools: Tools::default(),
             attachments: Vec::new(),
         }
     }
@@ -800,12 +812,18 @@ mod tests {
     /// them. Without the second the calls come back denied, and a launcher has
     /// nowhere to show the prompt that would answer that.
     #[test]
-    fn the_web_grant_both_declares_the_tools_and_approves_them() {
+    fn a_granted_tool_is_both_declared_and_approved() {
         let mut req = request();
-        req.web = true;
+        req.tools = Tools {
+            web_search: true,
+            web_fetch: true,
+        };
         let invocation = ClaudeAdapter.invocation(&req, &[]);
 
-        assert_eq!(tools_of(&invocation), serde_json::json!(WEB_TOOLS));
+        assert_eq!(
+            tools_of(&invocation),
+            serde_json::json!(["WebSearch", "WebFetch"])
+        );
         assert_eq!(
             allowlist(&invocation),
             Some(&["WebSearch".to_owned(), "WebFetch".to_owned()][..])
@@ -815,8 +833,20 @@ mod tests {
         assert_eq!(invocation.cwd, None);
     }
 
+    /// The toggles are separate because the tools are, and granting one must
+    /// not carry the other in with it.
     #[test]
-    fn without_the_web_grant_the_run_has_no_tools_and_approves_nothing() {
+    fn each_tool_is_granted_on_its_own() {
+        let mut req = request();
+        req.tools.web_fetch = true;
+        let invocation = ClaudeAdapter.invocation(&req, &[]);
+
+        assert_eq!(tools_of(&invocation), serde_json::json!(["WebFetch"]));
+        assert_eq!(allowlist(&invocation), Some(&["WebFetch".to_owned()][..]));
+    }
+
+    #[test]
+    fn without_a_grant_the_run_has_no_tools_and_approves_nothing() {
         let invocation = ClaudeAdapter.invocation(&request(), &[]);
         assert_eq!(tools_of(&invocation), serde_json::json!([]));
         assert_eq!(allowlist(&invocation), None);
@@ -830,7 +860,10 @@ mod tests {
         req.agent_dir = Some(PathBuf::from("/tmp/project"));
         assert_eq!(allowlist(&ClaudeAdapter.invocation(&req, &[])), None);
 
-        req.web = true;
+        req.tools = Tools {
+            web_search: true,
+            web_fetch: true,
+        };
         let invocation = ClaudeAdapter.invocation(&req, &[]);
         assert_eq!(
             allowlist(&invocation),
@@ -842,7 +875,7 @@ mod tests {
     /// Naming a conversation is a one-shot on the question text; nothing about
     /// it should ever reach the network.
     #[test]
-    fn naming_a_conversation_never_gains_the_web_grant() {
+    fn naming_a_conversation_never_gains_a_tool() {
         let invocation = ClaudeAdapter.title_invocation("what is a spectral class?");
         assert_eq!(allowlist(&invocation), None);
     }

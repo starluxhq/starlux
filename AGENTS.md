@@ -57,15 +57,17 @@ compiles `windows/macos.rs` or `windows/generic.rs`.
   does, and the prompt goes in argv instead. Still an array, never a string.
 - **Chat-only is the default.** A run declares no tools and no MCP servers, so a
   hotkey question cannot reach the filesystem or the network.
-- **The grants are independent.** A folder and the web are opted into
-  separately, per conversation. Neither implies the other, and the Quick Bar
+- **The grants are independent.** A folder belongs to a conversation; the tools
+  are one answer for the whole app, switched on in Settings. Neither implies the
+  other, tools are named one at a time rather than by category, and the Quick Bar
   shows both without being able to change either.
 - **A grant is written fresh, never found.** Gemini's lives in a policy file
   rather than in argv, so `CliAdapter::prepare` writes it before every run: a
   stale or edited file is a grant nobody made.
 - **SQLite is the source of truth.** Both windows are views over the Rust core;
-  state is not handed between them, and a run reads its grant back from the
-  database rather than trusting the window that asked.
+  state is not handed between them, and a run reads its grants back from the
+  database rather than trusting the window that asked. What one window changes
+  reaches the other as an event, never as a second write.
 - **`rusqlite` runs under `spawn_blocking`.** SQLite is synchronous.
 - **Platform quirks live in `src-tauri/src/windows/`.** A workaround leaking into
   feature code is a bug in the layering.

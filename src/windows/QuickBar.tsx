@@ -16,6 +16,7 @@ import ProviderHint from "../components/ProviderHint";
 import Turn from "../components/Turn";
 import { onAsk } from "../lib/events";
 import { useMirroredWindow } from "../lib/mirror";
+import { useSettings } from "../stores/useSettings";
 import { PICKER } from "../lib/models";
 import type { Attachment } from "../lib/types";
 import {
@@ -38,7 +39,6 @@ export default function QuickBar() {
     providerId,
     model,
     agentDir,
-    web,
     turns,
     status,
     runId,
@@ -52,6 +52,7 @@ export default function QuickBar() {
     newConversation,
   } = useChat();
   const context = currentContext(turns);
+  const { tools, loadTools } = useSettings();
   const scroller = useRef<HTMLDivElement>(null);
   const shell = useRef<HTMLDivElement>(null);
 
@@ -59,7 +60,8 @@ export default function QuickBar() {
 
   useEffect(() => {
     void loadProviders();
-  }, [loadProviders]);
+    void loadTools();
+  }, [loadProviders, loadTools]);
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
@@ -221,7 +223,7 @@ export default function QuickBar() {
             marker={false}
           />
 
-          <AgentMode dir={agentDir} web={web} />
+          <AgentMode dir={agentDir} tools={tools} />
 
           {context ? <ContextMeter context={context} /> : null}
 

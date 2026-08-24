@@ -105,6 +105,8 @@ say in the PR which platforms you verified on. The checks that matter:
 - **Never build a shell string** for a CLI provider. Commands are assembled as
   argv arrays. Prompts go over stdin, except where a CLI hangs on an open one —
   opencode does — and the prompt goes in argv instead. Still an array.
+- **A run reads its grants from the database**, never from the window that asked.
+  The folder belongs to the conversation; the tools belong to the app.
 - **SQLite is the source of truth.** Both windows are thin views over the Rust
   core; state is not handed between them.
 - **`rusqlite` calls run under `spawn_blocking`.** SQLite is synchronous and
@@ -125,7 +127,8 @@ it, and this says which.
 
 ```sh
 cargo run --example invocation -- opencode-cli "what colour is this?" blue.png
-WEB=1 MODEL=opus cargo run --example invocation -- claude-cli "what shipped?"
+SEARCH=1 MODEL=opus cargo run --example invocation -- claude-cli "what shipped?"
+FETCH=1 cargo run --example invocation -- gemini-cli "what does example.com say?"
 TITLE=1 cargo run --example invocation -- gemini-cli "how do pulsars work?"
 ```
 

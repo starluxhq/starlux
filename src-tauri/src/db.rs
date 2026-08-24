@@ -6,6 +6,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::engine::tools::{self, Tools};
 use crate::engine::{self, Attachment, Context, RateLimit, Usage};
 
 const SCHEMA_V1: &str = "
@@ -58,6 +59,10 @@ pub const CHANGED_EVENT: &str = "starlux://conversations";
 /// for. The choice outlives any one conversation, so both windows hold it, and
 /// a window that never heard about the change shows a stale one.
 pub const SELECTION_EVENT: &str = "starlux://selection";
+/// Emitted to the *other* window when this one changes what runs may reach.
+/// One answer for the whole app, so both windows show it and neither may sit
+/// claiming a grant that has been given back.
+pub const TOOLS_EVENT: &str = "starlux://tools";
 
 /// The thread the Workspace comes back to after a restart.
 pub const ACTIVE_CONVERSATION: &str = "active_conversation";
@@ -73,6 +78,10 @@ const MODEL_PREFIX: &str = "model:";
 /// One row per provider holding only its latest window. A snapshot of something
 /// that moves, not a history: `messages` is where anything worth keeping goes.
 const RATE_LIMIT_PREFIX: &str = "rate_limit:";
+/// One row per tool the user has switched on. Not on the conversation: what a
+/// run may reach is one answer for the whole app, so a question asked from the
+/// bar reaches exactly what one asked from the Workspace does.
+const TOOL_PREFIX: &str = "tool:";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -83,10 +92,6 @@ pub struct Conversation {
     pub session_id: Option<String>,
     pub model: Option<String>,
     pub agent_dir: Option<String>,
-    /// Whether the provider's web tools are on. Independent of `agent_dir`:
-    /// looking something up is not a reason to hand over a folder, and opting
-    /// into a folder is not a reason to silently gain the network.
-    pub web: bool,
     pub updated_at: i64,
     pub pinned: bool,
 }
@@ -136,23 +141,15 @@ impl Db {
         title_source: &str,
         provider_id: &str,
         agent_dir: Option<&str>,
-        web: bool,
     ) -> rusqlite::Result<bool> {
         let conn = self.0.lock().unwrap();
         let now = now_ms();
         let changed = conn.execute(
             "INSERT INTO conversations
-               (id, title, provider_id, agent_dir, web, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
+               (id, title, provider_id, agent_dir, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?5)
              ON CONFLICT(id) DO NOTHING",
-            params![
-                id,
-                title_from(title_source),
-                provider_id,
-                agent_dir,
-                web,
-                now
-            ],
+            params![id, title_from(title_source), provider_id, agent_dir, now],
         )?;
         Ok(changed == 1)
     }
@@ -256,35 +253,24 @@ impl Db {
         Ok(())
     }
 
-    /// The other half of the grant. Off by default and stored the same way, so
-    /// what a run may reach is read back rather than taken from the window.
-    pub fn set_web(&self, id: &str, web: bool) -> rusqlite::Result<()> {
-        let conn = self.0.lock().unwrap();
-        conn.execute(
-            "UPDATE conversations SET web = ?2 WHERE id = ?1",
-            params![id, web],
-        )?;
-        Ok(())
-    }
-
-    /// Both halves in one read, because a run needs both and asking twice
-    /// leaves room for them to disagree.
-    pub fn grant(&self, id: &str) -> rusqlite::Result<(Option<String>, bool)> {
+    /// What a run may reach, read back rather than taken from the window that
+    /// asked. A conversation nobody granted anything reads as chat-only.
+    pub fn agent_dir(&self, id: &str) -> rusqlite::Result<Option<String>> {
         let conn = self.0.lock().unwrap();
         Ok(conn
             .query_row(
-                "SELECT agent_dir, web FROM conversations WHERE id = ?1",
+                "SELECT agent_dir FROM conversations WHERE id = ?1",
                 params![id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| row.get(0),
             )
             .optional()?
-            .unwrap_or((None, false)))
+            .flatten())
     }
 
     pub fn list_conversations(&self) -> rusqlite::Result<Vec<Conversation>> {
         let conn = self.0.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, title, provider_id, provider_session_id, model, agent_dir, web,
+            "SELECT id, title, provider_id, provider_session_id, model, agent_dir,
                     updated_at, pinned
                FROM conversations
               ORDER BY pinned DESC, updated_at DESC",
@@ -297,7 +283,7 @@ impl Db {
         let conn = self.0.lock().unwrap();
         let conversation = conn
             .query_row(
-                "SELECT id, title, provider_id, provider_session_id, model, agent_dir, web,
+                "SELECT id, title, provider_id, provider_session_id, model, agent_dir,
                     updated_at, pinned
                    FROM conversations WHERE id = ?1",
                 params![conversation_id],
@@ -379,6 +365,23 @@ impl Db {
         .optional()
     }
 
+    /// Every tool, granted or not, so the answer is the whole grant rather than
+    /// whichever rows happen to exist. An id nobody defined is not stored.
+    pub fn tools(&self) -> rusqlite::Result<Tools> {
+        let mut granted = Tools::default();
+        for id in tools::ALL {
+            granted.set(
+                id,
+                self.setting(&format!("{TOOL_PREFIX}{id}"))?.as_deref() == Some("1"),
+            );
+        }
+        Ok(granted)
+    }
+
+    pub fn set_tool(&self, id: &str, on: bool) -> rusqlite::Result<()> {
+        self.set_setting(&format!("{TOOL_PREFIX}{id}"), on.then_some("1"))
+    }
+
     pub fn remember_model(&self, provider_id: &str, model: &str) -> rusqlite::Result<()> {
         self.set_setting(&format!("{MODEL_PREFIX}{provider_id}"), Some(model))
     }
@@ -448,6 +451,14 @@ const SCHEMA_V3: &str = "
 ALTER TABLE conversations ADD COLUMN web INTEGER NOT NULL DEFAULT 0;
 ";
 
+/// The web grant stopped being a property of a conversation and became one of
+/// the app, so the column goes rather than sitting there outranked. Nothing is
+/// carried over: every tool starts off, which is the safe direction to be wrong
+/// in and the same place a fresh install starts.
+const SCHEMA_V4: &str = "
+ALTER TABLE conversations DROP COLUMN web;
+";
+
 fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     let tx = conn.transaction()?;
     let version: i64 = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
@@ -463,6 +474,10 @@ fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
         tx.execute_batch(SCHEMA_V3)?;
         tx.pragma_update(None, "user_version", 3)?;
     }
+    if version < 4 {
+        tx.execute_batch(SCHEMA_V4)?;
+        tx.pragma_update(None, "user_version", 4)?;
+    }
     tx.commit()
 }
 
@@ -474,9 +489,8 @@ fn read_conversation(row: &rusqlite::Row<'_>) -> rusqlite::Result<Conversation> 
         session_id: row.get(3)?,
         model: row.get(4)?,
         agent_dir: row.get(5)?,
-        web: row.get(6)?,
-        updated_at: row.get(7)?,
-        pinned: row.get(8)?,
+        updated_at: row.get(6)?,
+        pinned: row.get(7)?,
     })
 }
 
@@ -608,7 +622,7 @@ mod tests {
     fn stores_and_reads_back_a_thread() {
         let db = db();
         assert!(db
-            .ensure_conversation("c1", "How do pulsars work?", "claude-cli", None, false)
+            .ensure_conversation("c1", "How do pulsars work?", "claude-cli", None)
             .unwrap());
         db.add_message("c1", &message("r1:u", "user", "How do pulsars work?"))
             .unwrap();
@@ -648,7 +662,7 @@ mod tests {
     #[test]
     fn an_answer_stored_without_a_context_reading_reports_none() {
         let db = db();
-        db.ensure_conversation("c1", "q", "claude-cli", None, false)
+        db.ensure_conversation("c1", "q", "claude-cli", None)
             .unwrap();
         db.add_message(
             "c1",
@@ -710,7 +724,7 @@ mod tests {
     #[test]
     fn a_question_keeps_the_files_that_were_asked_alongside_it() {
         let db = db();
-        db.ensure_conversation("c1", "what is this?", "claude-cli", None, false)
+        db.ensure_conversation("c1", "what is this?", "claude-cli", None)
             .unwrap();
         db.add_message(
             "c1",
@@ -738,7 +752,7 @@ mod tests {
     #[test]
     fn rewriting_a_question_replaces_what_was_attached_to_it() {
         let db = db();
-        db.ensure_conversation("c1", "hi", "claude-cli", None, false)
+        db.ensure_conversation("c1", "hi", "claude-cli", None)
             .unwrap();
         db.add_message(
             "c1",
@@ -765,7 +779,7 @@ mod tests {
     #[test]
     fn truncating_takes_the_attachments_of_the_dropped_turns() {
         let db = db();
-        db.ensure_conversation("c1", "hi", "claude-cli", None, false)
+        db.ensure_conversation("c1", "hi", "claude-cli", None)
             .unwrap();
         for id in ["r1:u", "r1", "r2:u"] {
             db.add_message(
@@ -787,10 +801,10 @@ mod tests {
         assert_eq!(orphans, 2);
     }
 
-    /// A conversation that existed before the grant was split keeps the answer
-    /// the old binary would have given, which is no network.
+    /// A database written before the grant moved keeps its folder and arrives
+    /// with nothing granted, which is where a fresh install starts too.
     #[test]
-    fn a_database_written_before_the_split_reads_as_chat_only() {
+    fn a_database_written_before_the_move_keeps_its_folder_and_no_tools() {
         let mut conn = Connection::open_in_memory().unwrap();
         {
             let tx = conn.transaction().unwrap();
@@ -807,17 +821,49 @@ mod tests {
         }
 
         let db = Db::init(conn).unwrap();
-        assert_eq!(db.grant("c1").unwrap(), (Some("/work".to_owned()), false));
+        assert_eq!(db.agent_dir("c1").unwrap().as_deref(), Some("/work"));
+        assert_eq!(db.tools().unwrap(), Tools::default());
+    }
+
+    /// The path every existing install takes. The grant itself is not carried
+    /// over — off is where a fresh install starts, and the safe direction to be
+    /// wrong in — but the conversation it was on must survive intact.
+    #[test]
+    fn a_conversation_that_had_the_web_grant_survives_losing_it() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        {
+            let tx = conn.transaction().unwrap();
+            tx.execute_batch(SCHEMA_V1).unwrap();
+            tx.execute_batch(SCHEMA_V2).unwrap();
+            tx.execute_batch(SCHEMA_V3).unwrap();
+            tx.pragma_update(None, "user_version", 3).unwrap();
+            tx.execute(
+                "INSERT INTO conversations
+                   (id, title, provider_id, agent_dir, web, pinned, created_at, updated_at)
+                 VALUES ('c1', 'kept', 'gemini-cli', '/work', 1, 1, 1, 1)",
+                [],
+            )
+            .unwrap();
+            tx.commit().unwrap();
+        }
+
+        let db = Db::init(conn).unwrap();
+        let kept = &db.list_conversations().unwrap()[0];
+        assert_eq!(kept.title, "kept");
+        assert_eq!(kept.provider_id, "gemini-cli");
+        assert_eq!(kept.agent_dir.as_deref(), Some("/work"));
+        assert!(kept.pinned);
+        assert_eq!(db.tools().unwrap(), Tools::default());
     }
 
     #[test]
     fn ensure_conversation_is_idempotent() {
         let db = db();
         assert!(db
-            .ensure_conversation("c1", "first", "claude-cli", None, false)
+            .ensure_conversation("c1", "first", "claude-cli", None)
             .unwrap());
         assert!(!db
-            .ensure_conversation("c1", "second", "claude-cli", None, false)
+            .ensure_conversation("c1", "second", "claude-cli", None)
             .unwrap());
         assert_eq!(db.list_conversations().unwrap().len(), 1);
         assert_eq!(
@@ -829,7 +875,7 @@ mod tests {
     #[test]
     fn resuming_a_conversation_recovers_its_provider_session() {
         let db = db();
-        db.ensure_conversation("c1", "hi", "claude-cli", None, false)
+        db.ensure_conversation("c1", "hi", "claude-cli", None)
             .unwrap();
         db.set_session("c1", "sess-42", Some("sonnet")).unwrap();
         let thread = db.thread("c1").unwrap().unwrap();
@@ -840,7 +886,7 @@ mod tests {
     #[test]
     fn a_streamed_answer_can_be_rewritten_in_place() {
         let db = db();
-        db.ensure_conversation("c1", "hi", "claude-cli", None, false)
+        db.ensure_conversation("c1", "hi", "claude-cli", None)
             .unwrap();
         db.add_message("c1", &message("r1", "assistant", "partial"))
             .unwrap();
@@ -854,34 +900,61 @@ mod tests {
     #[test]
     fn a_conversation_is_pinned_to_a_folder_and_can_be_released() {
         let db = db();
-        db.ensure_conversation("c1", "hi", "claude-cli", Some("/work"), false)
+        db.ensure_conversation("c1", "hi", "claude-cli", Some("/work"))
             .unwrap();
-        assert_eq!(db.grant("c1").unwrap().0.as_deref(), Some("/work"));
+        assert_eq!(db.agent_dir("c1").unwrap().as_deref(), Some("/work"));
         db.set_agent_dir("c1", Some("/elsewhere")).unwrap();
-        assert_eq!(db.grant("c1").unwrap().0.as_deref(), Some("/elsewhere"));
+        assert_eq!(db.agent_dir("c1").unwrap().as_deref(), Some("/elsewhere"));
         db.set_agent_dir("c1", None).unwrap();
-        assert_eq!(db.grant("c1").unwrap().0, None);
-        assert_eq!(db.grant("nobody").unwrap(), (None, false));
+        assert_eq!(db.agent_dir("c1").unwrap(), None);
+        assert_eq!(db.agent_dir("nobody").unwrap(), None);
     }
 
-    /// Neither half of the grant implies the other: a folder must not quietly
-    /// buy the network, and the network must not need a folder.
+    /// One answer for the whole app, and one row per tool: granting the fetcher
+    /// must not carry search in with it.
     #[test]
-    fn the_web_grant_moves_without_the_folder_and_the_folder_without_it() {
+    fn each_tool_is_granted_and_given_back_on_its_own() {
         let db = db();
-        db.ensure_conversation("c1", "hi", "claude-cli", None, true)
+        assert_eq!(db.tools().unwrap(), Tools::default());
+
+        db.set_tool(tools::WEB_FETCH, true).unwrap();
+        assert_eq!(
+            db.tools().unwrap(),
+            Tools {
+                web_search: false,
+                web_fetch: true
+            }
+        );
+
+        db.set_tool(tools::WEB_SEARCH, true).unwrap();
+        assert!(db.tools().unwrap().web_search);
+
+        db.set_tool(tools::WEB_FETCH, false).unwrap();
+        assert_eq!(
+            db.tools().unwrap(),
+            Tools {
+                web_search: true,
+                web_fetch: false
+            }
+        );
+    }
+
+    /// The grant left the conversation, and nothing about a conversation should
+    /// still be able to answer for it.
+    #[test]
+    fn a_conversation_no_longer_carries_a_web_grant() {
+        let db = db();
+        db.ensure_conversation("c1", "hi", "claude-cli", None)
             .unwrap();
-        assert_eq!(db.grant("c1").unwrap(), (None, true));
-
-        db.set_agent_dir("c1", Some("/work")).unwrap();
-        assert_eq!(db.grant("c1").unwrap(), (Some("/work".to_owned()), true));
-
-        db.set_web("c1", false).unwrap();
-        assert_eq!(db.grant("c1").unwrap(), (Some("/work".to_owned()), false));
-
-        assert!(!db.thread("c1").unwrap().unwrap().conversation.web);
-        db.set_web("c1", true).unwrap();
-        assert!(db.list_conversations().unwrap()[0].web);
+        let conn = db.0.lock().unwrap();
+        let columns: Vec<String> = conn
+            .prepare("SELECT * FROM conversations")
+            .unwrap()
+            .column_names()
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect();
+        assert!(!columns.contains(&"web".to_owned()), "{columns:?}");
     }
 
     #[test]
@@ -893,7 +966,7 @@ mod tests {
 
         // A run reports the exact build it used against the conversation. That
         // must not disturb the alias the picker offers and the next run sends.
-        db.ensure_conversation("c1", "hello", "claude-cli", None, false)
+        db.ensure_conversation("c1", "hello", "claude-cli", None)
             .unwrap();
         db.set_session("c1", "s1", Some("claude-opus-5-20260101"))
             .unwrap();
@@ -1022,7 +1095,7 @@ mod tests {
     #[test]
     fn deleting_a_conversation_takes_its_messages_with_it() {
         let db = db();
-        db.ensure_conversation("c1", "hi", "claude-cli", None, false)
+        db.ensure_conversation("c1", "hi", "claude-cli", None)
             .unwrap();
         db.add_message("c1", &message("r1:u", "user", "hi"))
             .unwrap();
@@ -1039,9 +1112,9 @@ mod tests {
     #[test]
     fn newest_conversation_is_listed_first() {
         let db = db();
-        db.ensure_conversation("c1", "older", "claude-cli", None, false)
+        db.ensure_conversation("c1", "older", "claude-cli", None)
             .unwrap();
-        db.ensure_conversation("c2", "newer", "claude-cli", None, false)
+        db.ensure_conversation("c2", "newer", "claude-cli", None)
             .unwrap();
         std::thread::sleep(std::time::Duration::from_millis(2));
         db.add_message("c1", &message("r1:u", "user", "bump"))
@@ -1058,7 +1131,7 @@ mod tests {
     #[test]
     fn truncating_keeps_the_message_it_was_given_and_everything_before_it() {
         let db = db();
-        db.ensure_conversation("c1", "hi", "claude-cli", None, false)
+        db.ensure_conversation("c1", "hi", "claude-cli", None)
             .unwrap();
         for id in ["r1:u", "r1", "r2:u", "r2"] {
             db.add_message("c1", &message(id, "user", id)).unwrap();
@@ -1082,7 +1155,7 @@ mod tests {
     #[test]
     fn truncating_separates_messages_written_in_the_same_millisecond() {
         let db = db();
-        db.ensure_conversation("c1", "hi", "claude-cli", None, false)
+        db.ensure_conversation("c1", "hi", "claude-cli", None)
             .unwrap();
         for id in ["a", "b", "c"] {
             db.add_message("c1", &message(id, "user", id)).unwrap();
@@ -1103,10 +1176,10 @@ mod tests {
     #[test]
     fn a_pinned_conversation_outranks_a_newer_one() {
         let db = db();
-        db.ensure_conversation("old", "older", "claude-cli", None, false)
+        db.ensure_conversation("old", "older", "claude-cli", None)
             .unwrap();
         std::thread::sleep(std::time::Duration::from_millis(2));
-        db.ensure_conversation("new", "newer", "claude-cli", None, false)
+        db.ensure_conversation("new", "newer", "claude-cli", None)
             .unwrap();
         assert_eq!(listed(&db), ["new", "old"]);
 
