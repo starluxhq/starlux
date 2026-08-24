@@ -5,7 +5,7 @@ use tauri::{AppHandle, Emitter};
 
 use super::{providers, StreamEvent};
 use crate::db::{self, Message};
-use crate::windows::{QUICKBAR, WORKSPACE};
+use crate::windows;
 
 pub const STREAM_EVENT: &str = "starlux://stream";
 
@@ -29,11 +29,7 @@ impl Sink {
     ) -> Self {
         Self {
             app,
-            peer: if origin == QUICKBAR {
-                WORKSPACE
-            } else {
-                QUICKBAR
-            },
+            peer: windows::peer_of(&origin),
             channel,
             conversation_id,
             model: Mutex::new(model),

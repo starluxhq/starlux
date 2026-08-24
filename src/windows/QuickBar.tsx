@@ -14,7 +14,8 @@ import { ModelMenu, ModelTrigger } from "../components/ModelPicker";
 import { ProviderMenu, ProviderTrigger } from "../components/ProviderPicker";
 import ProviderHint from "../components/ProviderHint";
 import Turn from "../components/Turn";
-import { onAsk, onStream } from "../lib/events";
+import { onAsk } from "../lib/events";
+import { useMirroredWindow } from "../lib/mirror";
 import { PICKER } from "../lib/models";
 import type { Attachment } from "../lib/types";
 import {
@@ -23,7 +24,7 @@ import {
   setBlurHideSuppressed,
   setQuickbarHeight,
 } from "../lib/ipc";
-import { applyMirrored, currentContext, useChat } from "../stores/useChat";
+import { currentContext, useChat } from "../stores/useChat";
 
 const THREAD_HEIGHT = 450;
 
@@ -64,7 +65,7 @@ export default function QuickBar() {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
   }, [turns]);
 
-  useEffect(() => onStream(applyMirrored), []);
+  useMirroredWindow();
 
   useEffect(
     () =>

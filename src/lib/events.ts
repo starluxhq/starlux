@@ -1,5 +1,5 @@
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import type { StreamEvent } from "./types";
+import type { Selection, StreamEvent } from "./types";
 
 type Off = () => void;
 
@@ -25,3 +25,8 @@ export const onFocusConversation = (handle: (id: string | null) => void) =>
 
 export const onAsk = (handle: (prompt: string) => void) =>
   subscribe<string>("starlux://ask", handle);
+
+/** What the other window chose for the next run. The choice outlives any one
+ *  conversation, so both windows hold it and both have to hear about it. */
+export const onSelection = (handle: (chosen: Selection) => void) =>
+  subscribe<Selection>("starlux://selection", handle);

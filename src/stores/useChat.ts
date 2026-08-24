@@ -57,6 +57,7 @@ interface ChatState {
   loadProviders: () => Promise<void>;
   selectProvider: (providerId: string) => void;
   selectModel: (model: string) => void;
+  adoptSelection: (providerId: string, model: string) => void;
   setAgentDir: (dir: string | null) => Promise<void>;
   setWeb: (web: boolean) => Promise<void>;
   apply: (event: StreamEvent) => void;
@@ -158,25 +159,30 @@ export const useChat = create<ChatState>((set, get) => ({
   // starts a fresh one rather than handing the new CLI a stranger's. The thread
   // on screen stays; what the model has been told does not.
   selectProvider: (providerId) => {
-    const { providerId: was, providers, lastModel } = get();
-    if (providerId === was) return;
+    const model = modelFor(get(), providerId);
+    if (!model || providerId === get().providerId) return;
 
-    // A remembered model the provider no longer offers is not a choice, it is
-    // a stale row: opencode's list is whatever the account can reach today.
-    const models = providers.find((provider) => provider.id === providerId)?.models ?? [];
-    const remembered = lastModel[providerId];
-    const model = remembered && models.includes(remembered) ? remembered : models[0];
-    if (!model) return;
-
-    set({ providerId, model, sessionId: null, lastModel: { ...lastModel, [providerId]: model } });
+    get().adoptSelection(providerId, model);
     void saveSelectedModel(providerId, model);
   },
 
   selectModel: (model) => {
     const { providerId } = get();
-    set({ model, lastModel: { ...get().lastModel, [providerId]: model } });
+    get().adoptSelection(providerId, model);
     void saveSelectedModel(providerId, model);
   },
+
+  // Applied without writing it back, so the window told about a choice does not
+  // tell the other one in turn. A session belongs to the provider that issued
+  // it, so changing provider abandons it here too — otherwise this window's
+  // next turn hands the new CLI a stranger's session id.
+  adoptSelection: (providerId, model) =>
+    set((state) => ({
+      providerId,
+      model,
+      lastModel: { ...state.lastModel, [providerId]: model },
+      sessionId: providerId === state.providerId ? state.sessionId : null,
+    })),
 
   // Stored against the conversation, not the window, so the folder a run may
   // touch is the one the user granted rather than the one this window last saw.
@@ -289,9 +295,23 @@ export const useChat = create<ChatState>((set, get) => ({
           if (!turns.some((loaded) => loaded.id === turn.id)) turns.push(turn);
         }
       }
+      // The picker shows what the next run in this thread will use, so opening
+      // one adopts its provider, and a model belonging to that provider. Only
+      // when the provider actually changes: re-opening the thread already on
+      // screen — which every expand does — must not undo a model just chosen.
+      //
+      // The thread's own `model` is never that choice. It records the exact
+      // build that answered (`claude-opus-5`) where the picker offers aliases
+      // (`opus`), and it is left alone when the provider list has not arrived
+      // yet, which is a real race: both are asked for as the Workspace mounts.
+      const { providerId } = thread.conversation;
+      const model =
+        providerId === state.providerId ? state.model : modelFor(state, providerId) ?? state.model;
+
       return {
         conversationId: id,
-        providerId: thread.conversation.providerId,
+        providerId,
+        model,
         sessionId: thread.conversation.sessionId,
         agentDir: thread.conversation.agentDir,
         web: thread.conversation.web,
@@ -346,6 +366,15 @@ export const useChat = create<ChatState>((set, get) => ({
     await dispatch(runOf(id), trimmed, turns[at].attachments ?? []);
   },
 }));
+
+/** Which of a provider's models to ask for: the one it was last asked for, or
+ *  its first. A remembered model it no longer offers is a stale row rather than
+ *  a choice — opencode's list is whatever the account can reach today. */
+function modelFor(state: ChatState, providerId: string): string | null {
+  const models = state.providers.find((provider) => provider.id === providerId)?.models ?? [];
+  const remembered = state.lastModel[providerId];
+  return (remembered && models.includes(remembered) ? remembered : models[0]) ?? null;
+}
 
 /** One run, under an id the caller chooses — new for a question just asked,
  *  the old one for a question being asked again. */
