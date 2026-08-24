@@ -103,11 +103,37 @@ say in the PR which platforms you verified on. The checks that matter:
 - **Platform quirks live in `src-tauri/src/windows/`** and nowhere else. If a
   workaround is leaking into feature code, that's a bug in the layering.
 - **Never build a shell string** for a CLI provider. Commands are assembled as
-  argv arrays, and prompts go over stdin — not as arguments.
+  argv arrays. Prompts go over stdin, except where a CLI hangs on an open one —
+  opencode does — and the prompt goes in argv instead. Still an array.
 - **SQLite is the source of truth.** Both windows are thin views over the Rust
   core; state is not handed between them.
 - **`rusqlite` calls run under `spawn_blocking`.** SQLite is synchronous and
   must not block the async runtime.
+
+## Two debugging examples
+
+Both print what the app would do, without running it:
+
+```sh
+cargo run --example providers
+```
+
+What the model picker would show, and why: which binaries were found on PATH,
+what each reports about being signed in, and the models it offered. A provider
+missing from the picker is usually a stale binary or a PATH without the CLI on
+it, and this says which.
+
+```sh
+cargo run --example invocation -- opencode-cli "what colour is this?" blue.png
+WEB=1 MODEL=opus cargo run --example invocation -- claude-cli "what shipped?"
+TITLE=1 cargo run --example invocation -- gemini-cli "how do pulsars work?"
+```
+
+The argv, environment and stdin an adapter builds, so a provider can be run with
+exactly what Starlux would have sent it. This is what makes the canary check
+reproducible: run a provider chat-only, ask it to read a file whose contents are
+a known string, and grep the output for that string. No unit test can see past
+the argv it asserts, and one of the three CLIs reads files by default.
 
 ## Reporting bugs
 
