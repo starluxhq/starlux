@@ -15,6 +15,7 @@ const ipc = vi.hoisted(() => ({
   selectedModel: vi.fn(() => Promise.resolve(null)),
   setAgentDir: vi.fn(() => Promise.resolve()),
   setWeb: vi.fn(() => Promise.resolve()),
+  rememberedModels: vi.fn(() => Promise.resolve([])),
 }));
 
 vi.mock("../lib/ipc", () => ipc);
@@ -170,6 +171,82 @@ describe("currentContext", () => {
       turn("c"),
     ];
     expect(currentContext(turns)?.used).toBe(40);
+  });
+});
+
+const catalog = () => [
+  {
+    id: "claude-cli",
+    name: "Claude Code",
+    binary: "claude",
+    login: "claude login",
+    availability: { state: "ready", plan: null },
+    models: ["opus", "sonnet"],
+    web: true,
+  },
+  {
+    id: "opencode-cli",
+    name: "opencode",
+    binary: "opencode",
+    login: "opencode auth login",
+    availability: { state: "ready", plan: null },
+    models: ["opencode/big-pickle", "opencode-go/glm-5.3"],
+    web: true,
+  },
+];
+
+describe("choosing a provider and a model", () => {
+  beforeEach(() => {
+    useChat.setState({
+      providers: catalog() as never,
+      providerId: "claude-cli",
+      model: "opus",
+      lastModel: {},
+    });
+  });
+
+  // A session id means nothing to another provider: handing opencode a Claude
+  // UUID resumes nothing, and storing it against the thread pairs one provider
+  // with another's session.
+  it("does not carry a session across a change of provider", () => {
+    useChat.setState({ conversationId: "conv-1", sessionId: "sess-claude" });
+    useChat.getState().selectProvider("opencode-cli");
+
+    const { providerId, model, sessionId } = useChat.getState();
+    expect({ providerId, model, sessionId }).toEqual({
+      providerId: "opencode-cli",
+      model: "opencode/big-pickle",
+      sessionId: null,
+    });
+  });
+
+  it("returns to the model that provider was last asked for", () => {
+    useChat.setState({ lastModel: { "opencode-cli": "opencode-go/glm-5.3" } });
+    useChat.getState().selectProvider("opencode-cli");
+    expect(useChat.getState().model).toBe("opencode-go/glm-5.3");
+
+    useChat.getState().selectProvider("claude-cli");
+    expect(useChat.getState().model).toBe("opus");
+  });
+
+  // opencode's list is whatever the account can reach today, so a remembered
+  // row can name a model that is no longer offered.
+  it("ignores a remembered model the provider no longer offers", () => {
+    useChat.setState({ lastModel: { "opencode-cli": "opencode-go/retired" } });
+    useChat.getState().selectProvider("opencode-cli");
+    expect(useChat.getState().model).toBe("opencode/big-pickle");
+  });
+
+  it("keeps the session when the provider has not actually changed", () => {
+    useChat.setState({ sessionId: "sess-claude" });
+    useChat.getState().selectProvider("claude-cli");
+    expect(useChat.getState().sessionId).toBe("sess-claude");
+  });
+
+  it("remembers a model against the provider it belongs to", () => {
+    useChat.getState().selectModel("sonnet");
+    expect(useChat.getState().lastModel).toEqual({ "claude-cli": "sonnet" });
+    expect(ipc.saveSelectedModel).toHaveBeenCalledWith("claude-cli", "sonnet");
   });
 });
 

@@ -4,6 +4,7 @@ import {
   listProviders,
   loadConversation,
   rateLimits as loadRateLimits,
+  rememberedModels,
   runPrompt,
   saveSelectedModel,
   selectedModel,
@@ -43,6 +44,9 @@ interface ChatState {
   limits: Record<string, RateLimit>;
   providerId: string;
   model: string | null;
+  /** The model each provider was last asked for. Picking a provider still has
+   *  to pick a model, and the one that sorts first is rarely the one you left. */
+  lastModel: Record<string, string>;
   conversationId: string | null;
   sessionId: string | null;
   agentDir: string | null;
@@ -51,7 +55,8 @@ interface ChatState {
   status: Status;
   runId: string | null;
   loadProviders: () => Promise<void>;
-  selectModel: (providerId: string, model: string) => void;
+  selectProvider: (providerId: string) => void;
+  selectModel: (model: string) => void;
   setAgentDir: (dir: string | null) => Promise<void>;
   setWeb: (web: boolean) => Promise<void>;
   apply: (event: StreamEvent) => void;
@@ -113,6 +118,7 @@ export const useChat = create<ChatState>((set, get) => ({
   limits: {},
   providerId: "claude-cli",
   model: null,
+  lastModel: {},
   conversationId: null,
   sessionId: null,
   agentDir: null,
@@ -125,9 +131,10 @@ export const useChat = create<ChatState>((set, get) => ({
   // the next question asks for, on this launch or the next one. A saved choice
   // whose provider or model has since gone is dropped rather than sent.
   loadProviders: async () => {
-    const [providers, saved, limits] = await Promise.all([
+    const [providers, saved, remembered, limits] = await Promise.all([
       listProviders(),
       selectedModel(),
+      rememberedModels(),
       loadRateLimits(),
     ]);
     const usable = providers.filter(isReady);
@@ -138,6 +145,7 @@ export const useChat = create<ChatState>((set, get) => ({
 
     set({
       providers,
+      lastModel: Object.fromEntries(remembered.map((one) => [one.providerId, one.model])),
       limits: Object.fromEntries(limits.map((limit) => [limit.providerId, limit])),
       ...(chosen && {
         providerId: chosen.id,
@@ -146,10 +154,27 @@ export const useChat = create<ChatState>((set, get) => ({
     });
   },
 
-  // Provider and model move together: the list spans every provider, so
-  // picking one that belongs to another is also a switch of provider.
-  selectModel: (providerId, model) => {
-    set({ providerId, model });
+  // A provider's session id means nothing to another provider, so switching
+  // starts a fresh one rather than handing the new CLI a stranger's. The thread
+  // on screen stays; what the model has been told does not.
+  selectProvider: (providerId) => {
+    const { providerId: was, providers, lastModel } = get();
+    if (providerId === was) return;
+
+    // A remembered model the provider no longer offers is not a choice, it is
+    // a stale row: opencode's list is whatever the account can reach today.
+    const models = providers.find((provider) => provider.id === providerId)?.models ?? [];
+    const remembered = lastModel[providerId];
+    const model = remembered && models.includes(remembered) ? remembered : models[0];
+    if (!model) return;
+
+    set({ providerId, model, sessionId: null, lastModel: { ...lastModel, [providerId]: model } });
+    void saveSelectedModel(providerId, model);
+  },
+
+  selectModel: (model) => {
+    const { providerId } = get();
+    set({ model, lastModel: { ...get().lastModel, [providerId]: model } });
     void saveSelectedModel(providerId, model);
   },
 

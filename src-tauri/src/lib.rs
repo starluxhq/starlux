@@ -92,6 +92,7 @@ pub fn run() {
             commands::rate_limits,
             commands::selected_model,
             commands::set_selected_model,
+            commands::remembered_models,
             commands::sidebar_collapsed,
             commands::set_sidebar_collapsed,
             commands::store_artifact,
