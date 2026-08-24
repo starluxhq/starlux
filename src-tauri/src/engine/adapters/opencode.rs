@@ -429,11 +429,14 @@ mod tests {
     /// message and reports it as a filename that does not exist.
     #[test]
     fn attachments_are_separated_from_the_message() {
-        let invocation = OpencodeAdapter.invocation(&request(), &[loaded("blue.png")]);
+        let png = loaded("blue.png");
+        let invocation = OpencodeAdapter.invocation(&request(), std::slice::from_ref(&png));
         let file = invocation.args.iter().position(|a| a == "-f").unwrap();
         let stop = invocation.args.iter().position(|a| a == "--").unwrap();
         assert!(file < stop);
-        assert_eq!(invocation.args[file + 1], "/tmp/blue.png");
+        // Spelled the way the platform spells it: a path built here with `join`
+        // wears a backslash on Windows, and the CLI wants what the OS gave us.
+        assert_eq!(invocation.args[file + 1], png.path.to_string_lossy());
         assert_eq!(invocation.args[stop + 1], "what colour is this?");
     }
 
