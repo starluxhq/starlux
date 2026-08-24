@@ -2,11 +2,13 @@ import type { Tools } from "../lib/types";
 
 interface AgentModeProps {
   dir: string | null;
-  tools: Tools;
+  /** Absent where the settings are, which is the Workspace: a badge repeating
+   *  what the panel two clicks away already says is chrome. The Quick Bar has
+   *  no way in there and passes them, because a hotkey question reaching the
+   *  network is worth saying out loud. Never changed either way. */
+  tools?: Tools;
   /** Both are absent in the Quick Bar, which shows the folder but cannot change
-   *  it: a hotkey question should never be one click from the filesystem. The
-   *  tools are shown and never changed here — they are granted in Settings, for
-   *  the whole app rather than for whichever conversation is on screen. */
+   *  it: a hotkey question should never be one click from the filesystem. */
   onPick?: () => void;
   onClear?: () => void;
 }
@@ -72,9 +74,8 @@ export default function AgentMode({ dir, tools, onPick, onClear }: AgentModeProp
       ) : null}
 
       {/* An open ring for the one grant that points away from the machine,
-          against the folder's solid diamond. Shown, never changed: a window a
-          hotkey put on screen is not where the network is opened. */}
-      {tools.webSearch || tools.webFetch ? (
+          against the folder's solid diamond. */}
+      {tools && (tools.webSearch || tools.webFetch) ? (
         <span title={reach(tools)} className="inline-flex shrink-0 items-center gap-1.5 text-class-a">
           <span aria-hidden className="size-[6px] shrink-0 rounded-full border border-class-a bg-class-a/40" />
           Web
