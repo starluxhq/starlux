@@ -14,7 +14,6 @@ const ipc = vi.hoisted(() => ({
   saveSelectedModel: vi.fn(),
   selectedModel: vi.fn(() => Promise.resolve(null)),
   setAgentDir: vi.fn(() => Promise.resolve()),
-  setWeb: vi.fn(() => Promise.resolve()),
   rememberedModels: vi.fn(() => Promise.resolve([])),
 }));
 
@@ -53,7 +52,6 @@ beforeEach(() => {
     runId: null,
     sessionId: null,
     conversationId: null,
-    web: false,
     agentDir: null,
   });
 });
@@ -338,33 +336,37 @@ describe("opening a conversation", () => {
 });
 
 describe("grants", () => {
-  // Stored against the conversation, not the window, so a grant revoked in one
+  // Stored against the conversation, not the window, so a folder revoked in one
   // window cannot be spent in the other.
-  it("writes the web grant against the conversation and sends it with the run", async () => {
+  it("writes the folder against the conversation", async () => {
     useChat.setState({ conversationId: "conv-1" });
-    await useChat.getState().setWeb(true);
+    await useChat.getState().setAgentDir("/work");
 
-    expect(ipc.setWeb).toHaveBeenCalledWith("conv-1", true);
-    expect(useChat.getState().web).toBe(true);
-
-    await useChat.getState().send("what shipped this week?");
-    expect(ipc.runPrompt.mock.calls[0][0]).toMatchObject({ web: true });
+    expect(ipc.setAgentDir).toHaveBeenCalledWith("conv-1", "/work");
+    expect(useChat.getState().agentDir).toBe("/work");
   });
 
   // Nowhere to write it yet, so it travels with the run that opens the thread.
-  it("carries the grant into a conversation that does not exist yet", async () => {
-    await useChat.getState().setWeb(true);
-    expect(ipc.setWeb).not.toHaveBeenCalled();
+  it("carries the folder into a conversation that does not exist yet", async () => {
+    await useChat.getState().setAgentDir("/work");
+    expect(ipc.setAgentDir).not.toHaveBeenCalled();
 
     await useChat.getState().send("hello");
-    expect(ipc.runPrompt.mock.calls[0][0]).toMatchObject({ web: true });
+    expect(ipc.runPrompt.mock.calls[0][0]).toMatchObject({ agentDir: "/work" });
   });
 
-  it("starts a new conversation with neither grant", async () => {
-    useChat.setState({ conversationId: "conv-1", web: true, agentDir: "/work" });
+  it("starts a new conversation chat-only", () => {
+    useChat.setState({ conversationId: "conv-1", agentDir: "/work" });
     useChat.getState().newConversation();
-    const { web, agentDir } = useChat.getState();
-    expect({ web, agentDir }).toEqual({ web: false, agentDir: null });
+    expect(useChat.getState().agentDir).toBeNull();
+  });
+
+  // The tools are the app's, not the conversation's, so the run does not carry
+  // them and the core reads them back for itself.
+  it("never sends the tools with a run", async () => {
+    await useChat.getState().send("what shipped this week?");
+    expect(ipc.runPrompt.mock.calls[0][0]).not.toHaveProperty("tools");
+    expect(ipc.runPrompt.mock.calls[0][0]).not.toHaveProperty("web");
   });
 });
 

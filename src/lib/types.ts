@@ -57,9 +57,19 @@ export interface RunRequest {
   sessionId?: string | null;
   model?: string | null;
   agentDir?: string | null;
-  web?: boolean;
   attachments?: string[];
 }
+
+/** What every run may reach beyond the model itself. One answer for the whole
+ *  app, so a question asked from the bar reaches exactly what one asked from
+ *  the Workspace does. Searching and fetching are granted separately because
+ *  the providers grant them separately. */
+export interface Tools {
+  webSearch: boolean;
+  webFetch: boolean;
+}
+
+export type ToolId = keyof Tools;
 
 export interface Conversation {
   id: string;
@@ -68,8 +78,6 @@ export interface Conversation {
   sessionId: string | null;
   model: string | null;
   agentDir: string | null;
-  /** Whether runs may reach the network. Independent of `agentDir`. */
-  web: boolean;
   updatedAt: number;
   pinned: boolean;
 }
@@ -109,8 +117,10 @@ export interface Provider {
   login: string;
   availability: Availability;
   models: string[];
-  /** Whether this provider has web tools to grant at all. */
-  web: boolean;
+  /** Which of Starlux's tools this CLI has to offer. Not every provider has
+   *  every one, so a tool granted app-wide is still only reached where it
+   *  exists. */
+  tools: ToolId[];
 }
 
 export const isReady = (provider: Provider) => provider.availability.state === "ready";

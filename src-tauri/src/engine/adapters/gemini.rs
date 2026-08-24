@@ -2,15 +2,16 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
+use crate::engine::tools::{Tools, WEB_FETCH, WEB_SEARCH};
 use crate::engine::{
     data_dir, system_prompt, CliAdapter, Invocation, Loaded, ParseState, RunRequest, StreamEvent,
     Usage,
 };
 
-/// gemini's own names for the two tools that reach the network, and for the two
-/// that read a file. Named exactly rather than by category, so an allowlist
-/// cannot grow with the provider.
-const WEB_TOOLS: [&str; 2] = ["google_web_search", "web_fetch"];
+/// gemini's own names for the two tools Starlux grants, and for the two that
+/// read a file. Named exactly rather than by category, so an allowlist cannot
+/// grow with the provider.
+const NAMES: [(&str, &str); 2] = [(WEB_SEARCH, "google_web_search"), (WEB_FETCH, "web_fetch")];
 const READ_TOOLS: [&str; 2] = ["read_file", "read_many_files"];
 
 /// Within a tier, higher wins. Denying everything sits below the two narrow
@@ -32,11 +33,11 @@ impl CliAdapter for GeminiAdapter {
     /// list, not a restriction — so the policy file is not optional, and this is
     /// what writes it.
     fn prepare(&self, req: &RunRequest, files: &[Loaded]) -> Result<(), String> {
-        write_policy(&policy_path(&req.run_id), &policy(req.web, files))
+        write_policy(&policy_path(&req.run_id), &policy(&req.tools, files))
     }
 
     fn prepare_title(&self) -> Result<(), String> {
-        write_policy(&policy_path(TITLE_POLICY), &policy(false, &[]))
+        write_policy(&policy_path(TITLE_POLICY), &policy(&Tools::default(), &[]))
     }
 
     fn invocation(&self, req: &RunRequest, files: &[Loaded]) -> Invocation {
@@ -211,12 +212,17 @@ fn write_policy(path: &Path, body: &str) -> Result<(), String> {
 /// by a read tool, so the file cannot arrive while reading is denied. The
 /// allowance is pinned to the paths they attached rather than to reading at
 /// large, so attaching a screenshot does not also open the filesystem.
-fn policy(web: bool, files: &[Loaded]) -> String {
+fn policy(tools: &Tools, files: &[Loaded]) -> String {
     let mut rules =
         format!("[[rule]]\ntoolName = \"*\"\ndecision = \"deny\"\npriority = {DENY_PRIORITY}\n");
 
-    if web {
-        rules.push_str(&allow(&WEB_TOOLS, None));
+    let granted: Vec<&str> = NAMES
+        .iter()
+        .filter(|(id, _)| tools.get(id))
+        .map(|(_, name)| *name)
+        .collect();
+    if !granted.is_empty() {
+        rules.push_str(&allow(&granted, None));
     }
     if !files.is_empty() {
         let paths = files
@@ -304,7 +310,7 @@ mod tests {
             session_id: None,
             model: Some("gemini-3.5-flash".into()),
             agent_dir: None,
-            web: false,
+            tools: Tools::default(),
             attachments: Vec::new(),
         }
     }
@@ -433,7 +439,7 @@ mod tests {
 
     #[test]
     fn chat_only_denies_every_tool_and_lifts_none_of_them() {
-        let policy = policy(false, &[]);
+        let policy = policy(&Tools::default(), &[]);
         assert!(policy.contains(r#"toolName = "*""#));
         assert!(policy.contains(r#"decision = "deny""#));
         assert!(!policy.contains(r#"decision = "allow""#));
@@ -441,11 +447,31 @@ mod tests {
 
     #[test]
     fn the_web_grant_lifts_the_two_web_tools_and_nothing_else() {
-        let policy = policy(true, &[]);
+        let policy = policy(
+            &Tools {
+                web_search: true,
+                web_fetch: true,
+            },
+            &[],
+        );
         assert!(policy.contains(r#"toolName = ["google_web_search", "web_fetch"]"#));
         assert!(!policy.contains("read_file"));
         // The deny stays: it is what everything not named falls through to.
         assert!(policy.contains(r#"toolName = "*""#));
+    }
+
+    /// Granting one must not lift the other out of the deny with it.
+    #[test]
+    fn only_the_granted_tool_is_lifted() {
+        let policy = policy(
+            &Tools {
+                web_search: false,
+                web_fetch: true,
+            },
+            &[],
+        );
+        assert!(policy.contains(r#"toolName = ["web_fetch"]"#));
+        assert!(!policy.contains("google_web_search"));
     }
 
     /// `@path` is expanded by a read tool, so a file cannot arrive while reading
@@ -453,14 +479,17 @@ mod tests {
     /// attaching a screenshot does not also open the filesystem.
     #[test]
     fn an_attachment_lifts_reading_only_for_its_own_path() {
-        let policy = policy(false, &[loaded("/home/a/blue.png")]);
+        let policy = policy(&Tools::default(), &[loaded("/home/a/blue.png")]);
         assert!(policy.contains(r#"toolName = ["read_file", "read_many_files"]"#));
         assert!(policy.contains(r#"argsPattern = '"(/home/a/blue\.png)"'"#));
     }
 
     #[test]
     fn several_attachments_share_one_allowance() {
-        let policy = policy(false, &[loaded("/a/one.png"), loaded("/b/two.md")]);
+        let policy = policy(
+            &Tools::default(),
+            &[loaded("/a/one.png"), loaded("/b/two.md")],
+        );
         assert!(policy.contains(r#"'"(/a/one\.png|/b/two\.md)"'"#));
         assert_eq!(policy.matches("read_file").count(), 1);
     }

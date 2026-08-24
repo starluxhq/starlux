@@ -9,8 +9,10 @@ use crate::engine::{
 const CHAT_AGENT: &str = "starlux-chat";
 const TITLE_AGENT: &str = "starlux-title";
 
-/// opencode's own name for its fetcher. Named exactly rather than by category,
-/// so an allowlist cannot grow with the provider.
+/// opencode's own name for its fetcher, and the only tool Starlux grants that
+/// it has: there is no search tool to allow, so `webSearch` has nothing to
+/// translate to here. Named exactly rather than by category, so an allowlist
+/// cannot grow with the provider.
 const WEB_TOOL: &str = "webfetch";
 
 /// Injected rather than written to disk: the user's own `opencode.json` is
@@ -231,7 +233,7 @@ fn chat_agent(req: &RunRequest) -> Value {
             "deny".into()
         },
     );
-    if req.web {
+    if req.tools.web_fetch {
         permission.insert(WEB_TOOL.into(), "allow".into());
     }
 
@@ -260,6 +262,7 @@ fn title_agent() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::Tools;
     use std::path::PathBuf;
 
     /// A real turn, captured from opencode 1.18.21. The JSON shape drifted once
@@ -276,7 +279,7 @@ mod tests {
             session_id: None,
             model: Some("opencode/hy3-free".into()),
             agent_dir: None,
-            web: false,
+            tools: Tools::default(),
             attachments: Vec::new(),
         }
     }
@@ -459,15 +462,28 @@ mod tests {
     }
 
     #[test]
-    fn the_web_grant_opens_the_fetcher_and_nothing_else() {
+    fn the_fetch_grant_opens_the_fetcher_and_nothing_else() {
         let mut req = request();
-        req.web = true;
+        req.tools.web_fetch = true;
         let invocation = OpencodeAdapter.invocation(&req, &[]);
         assert_eq!(
             permission(&invocation, CHAT_AGENT),
             serde_json::json!({ "*": "deny", "webfetch": "allow" })
         );
         assert_eq!(invocation.cwd, None);
+    }
+
+    /// opencode has no search tool, so the app-wide grant has nothing to
+    /// translate to here and must not open the fetcher in its place.
+    #[test]
+    fn the_search_grant_opens_nothing_where_there_is_no_search_tool() {
+        let mut req = request();
+        req.tools.web_search = true;
+        let invocation = OpencodeAdapter.invocation(&req, &[]);
+        assert_eq!(
+            permission(&invocation, CHAT_AGENT),
+            serde_json::json!({ "*": "deny" })
+        );
     }
 
     /// opencode takes its directory from the process's own, so agent mode is a

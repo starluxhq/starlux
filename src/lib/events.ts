@@ -1,5 +1,5 @@
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import type { Selection, StreamEvent } from "./types";
+import type { Selection, StreamEvent, Tools } from "./types";
 
 type Off = () => void;
 
@@ -30,3 +30,8 @@ export const onAsk = (handle: (prompt: string) => void) =>
  *  conversation, so both windows hold it and both have to hear about it. */
 export const onSelection = (handle: (chosen: Selection) => void) =>
   subscribe<Selection>("starlux://selection", handle);
+
+/** What the other window granted or gave back. One answer for the whole app, so
+ *  neither window may sit showing a grant that no longer stands. */
+export const onTools = (handle: (tools: Tools) => void) =>
+  subscribe<Tools>("starlux://tools", handle);

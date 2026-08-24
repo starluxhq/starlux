@@ -4,13 +4,13 @@ import AgentMode from "../components/AgentMode";
 import ArtifactViewer from "../components/ArtifactViewer";
 import Attachments from "../components/Attachments";
 import Composer from "../components/Composer";
-import ConversationList from "../components/ConversationList";
 import ContextMeter from "../components/ContextMeter";
 import { ModelMenu, ModelTrigger } from "../components/ModelPicker";
 import { ProviderMenu, ProviderTrigger } from "../components/ProviderPicker";
 import ProviderHint from "../components/ProviderHint";
+import SettingsModal from "../components/SettingsModal";
+import Sidebar from "../components/Sidebar";
 import Turn from "../components/Turn";
-import SidebarToolbar from "../components/SidebarToolbar";
 import WindowControls from "../components/WindowControls";
 import { PICKER } from "../lib/models";
 import { platform } from "../lib/platform";
@@ -21,14 +21,14 @@ import { activeConversation, saveSidebarCollapsed, sidebarCollapsed } from "../l
 import { useArtifact } from "../stores/useArtifact";
 import { currentContext, useChat } from "../stores/useChat";
 import { useConversations } from "../stores/useConversations";
+import { useSettings } from "../stores/useSettings";
 
 export default function Workspace() {
   const [draft, setDraft] = useState("");
   const [files, setFiles] = useState<Attachment[]>([]);
   const [picking, setPicking] = useState<"provider" | "model" | null>(null);
+  const [settings, setSettings] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  // The stored state has to land without sliding: restoring a hidden sidebar
-  // is not a move the user made, so only their own toggles are animated.
   const [animate, setAnimate] = useState(false);
   const {
     providers,
@@ -46,28 +46,25 @@ export default function Workspace() {
     selectProvider,
     selectModel,
     setAgentDir,
-    web,
-    setWeb,
     send,
     retry,
     edit,
     stop,
   } = useChat();
   const context = currentContext(turns);
-  // A provider with no web tools has no grant to offer, so the toggle is not
-  // shown rather than shown and ignored.
-  const grantable = providers.find((provider) => provider.id === providerId)?.web ?? false;
+  const { tools, loadTools } = useSettings();
   const { items, load, rename, pin, remove } = useConversations();
   const { expanded, collapse } = useArtifact();
 
   useEffect(() => {
     void loadProviders();
     void load();
+    void loadTools();
     void activeConversation().then((id) => {
       if (id) void openConversation(id);
     });
     void sidebarCollapsed().then(setCollapsed);
-  }, [loadProviders, load, openConversation]);
+  }, [loadProviders, load, loadTools, openConversation]);
 
   useMirroredWindow();
   useEffect(() => onConversationsChanged(() => void load()), [load]);
@@ -96,8 +93,10 @@ export default function Workspace() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const accel = event.metaKey || event.ctrlKey;
-      // An open artifact is the nearest thing to dismiss, so it goes first.
-      if (event.key === "Escape" && picking) setPicking(null);
+      // Nearest thing first: the settings sit over everything, then a menu,
+      // then an artifact, then the run itself.
+      if (event.key === "Escape" && settings) setSettings(false);
+      else if (event.key === "Escape" && picking) setPicking(null);
       else if (event.key === "Escape" && expanded) collapse();
       else if (event.key === "Escape" && status === "streaming") void stop();
       if (accel && event.key.toLowerCase() === "n") {
@@ -108,7 +107,7 @@ export default function Workspace() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [status, stop, newConversation, expanded, collapse, picking]);
+  }, [status, stop, newConversation, expanded, collapse, picking, settings]);
 
 
   const showSidebar = (shown: boolean) => {
@@ -147,6 +146,10 @@ export default function Workspace() {
 
   return (
     <div className="flex h-full flex-col bg-void text-ink">
+      {/* A modal `<dialog>`, so it is in the top layer rather than positioned
+          over the page. Escape is handled below all the same: the keystroke
+          still reaches this window, and the ladder must not also stop a run. */}
+      {settings ? <SettingsModal onClose={() => setSettings(false)} /> : null}
       {/* The window has no toolkit chrome, so this strip is both the handle it
           is moved by and the corner its controls sit in. Indented on macOS,
           where the traffic lights are drawn over the page's own top-left. */}
@@ -163,54 +166,31 @@ export default function Workspace() {
         <div className="ml-auto flex min-w-0 items-center gap-4">
           <AgentMode
             dir={agentDir}
-            web={web}
+            tools={tools}
             onPick={() => void pickFolder()}
             onClear={() => void setAgentDir(null)}
-            onWeb={grantable ? (on) => void setWeb(on) : undefined}
           />
           {platform === "macos" ? null : <WindowControls />}
         </div>
       </div>
 
       <div className="flex min-h-0 flex-1">
-        {/* Closing it leaves a strip rather than nothing: the toolbar stays put
-            and the list is drawn back behind it, at its full width throughout
-            so the rows never reflow on the way out. */}
-        <aside
-          className={`shrink-0 overflow-hidden border-r border-white/6 bg-dust/60 ${
-            animate ? "transition-[width] duration-200 ease-out motion-reduce:transition-none" : ""
-          } ${collapsed ? "w-12" : "w-64"}`}
-        >
-          <div className="flex h-full w-64 flex-col">
-            <SidebarToolbar
-              collapsed={collapsed}
-              onNew={startConversation}
-              onToggle={() => showSidebar(collapsed)}
-            />
-            <div
-              className={`flex min-h-0 flex-1 flex-col ${
-                animate ? "transition-opacity duration-150 motion-reduce:transition-none" : ""
-              } ${collapsed ? "pointer-events-none opacity-0" : "opacity-100"}`}
-            >
-              <p className="px-5 pt-3 pb-3 font-mono text-[10px] tracking-wider text-faint uppercase">
-                Conversations
-              </p>
-              <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-                <ConversationList
-                  items={items}
-                  activeId={conversationId}
-                  onOpen={(id) => void openConversation(id)}
-                  onRename={(id, title) => void rename(id, title)}
-                  onPin={(id, pinned) => void pin(id, pinned)}
-                  onDelete={(id) => {
-                    if (id === conversationId) newConversation();
-                    void remove(id);
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-        </aside>
+        <Sidebar
+          items={items}
+          activeId={conversationId}
+          collapsed={collapsed}
+          animate={animate}
+          onToggle={() => showSidebar(collapsed)}
+          onNew={startConversation}
+          onOpenSettings={() => setSettings(true)}
+          onOpen={(id) => void openConversation(id)}
+          onRename={(id, title) => void rename(id, title)}
+          onPin={(id, pinned) => void pin(id, pinned)}
+          onDelete={(id) => {
+            if (id === conversationId) newConversation();
+            void remove(id);
+          }}
+        />
 
         <main className="flex min-w-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-6">

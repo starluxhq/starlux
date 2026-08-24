@@ -8,10 +8,11 @@
 //!
 //! ```sh
 //! cargo run --example invocation -- opencode-cli "what colour is this?" blue.png
-//! WEB=1 MODEL=opus cargo run --example invocation -- claude-cli "what shipped?"
+//! SEARCH=1 MODEL=opus cargo run --example invocation -- claude-cli "what shipped?"
+//! FETCH=1 cargo run --example invocation -- gemini-cli "what does example.com say?"
 //! TITLE=1 cargo run --example invocation -- claude-cli "how do pulsars work?"
 //! ```
-use starlux_lib::engine::{adapters, file_name, mime_of, Loaded, RunRequest};
+use starlux_lib::engine::{adapters, file_name, mime_of, Loaded, RunRequest, Tools};
 
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -25,7 +26,10 @@ fn main() {
         session_id: None,
         model: std::env::var("MODEL").ok(),
         agent_dir: None,
-        web: std::env::var("WEB").is_ok(),
+        tools: Tools {
+            web_search: std::env::var("SEARCH").is_ok(),
+            web_fetch: std::env::var("FETCH").is_ok(),
+        },
         attachments: args.map(Into::into).collect(),
     };
     let files: Vec<Loaded> = req

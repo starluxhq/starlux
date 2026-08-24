@@ -5,6 +5,8 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::engine::tools::{WEB_FETCH, WEB_SEARCH};
+
 /// Installed and signed in are different problems with different fixes, and
 /// `which` can only answer the first. A signed-out provider that reads as
 /// simply absent sends the user looking for an install that is already there.
@@ -28,9 +30,10 @@ pub struct Provider {
     pub login: &'static str,
     pub availability: Availability,
     pub models: Vec<String>,
-    /// Whether this provider has web tools to grant at all. With one provider
-    /// the toggle could be assumed; with two it cannot.
-    pub web: bool,
+    /// Which of Starlux's tools this CLI has to offer. Not every provider has
+    /// every one — opencode ships a fetcher and no search — so a tool granted
+    /// app-wide is still only reached where it exists.
+    pub tools: Vec<&'static str>,
 }
 
 struct Entry {
@@ -41,7 +44,7 @@ struct Entry {
     /// Empty where the binary is the only honest source, and the models the
     /// user has depend on what they are signed in to.
     models: &'static [&'static str],
-    web: bool,
+    tools: &'static [&'static str],
 }
 
 const CATALOG: &[Entry] = &[
@@ -51,7 +54,7 @@ const CATALOG: &[Entry] = &[
         binary: "claude",
         login: "claude login",
         models: &["opus", "sonnet", "haiku"],
-        web: true,
+        tools: &[WEB_SEARCH, WEB_FETCH],
     },
     Entry {
         id: "gemini-cli",
@@ -62,7 +65,7 @@ const CATALOG: &[Entry] = &[
         // rather than what the docs imply exists: `gemini-3-pro` is a 404.
         // `auto` is the CLI's own router, and its default.
         models: &["auto", "gemini-3.5-flash", "gemini-3.1-flash-lite"],
-        web: true,
+        tools: &[WEB_SEARCH, WEB_FETCH],
     },
     Entry {
         id: "opencode-cli",
@@ -70,7 +73,8 @@ const CATALOG: &[Entry] = &[
         binary: "opencode",
         login: "opencode auth login",
         models: &[],
-        web: true,
+        // No search tool exists to grant, only the fetcher.
+        tools: &[WEB_FETCH],
     },
 ];
 
@@ -124,7 +128,7 @@ fn one(entry: &Entry) -> Provider {
             availability(entry, &models)
         },
         models,
-        web: entry.web,
+        tools: entry.tools.to_vec(),
     }
 }
 

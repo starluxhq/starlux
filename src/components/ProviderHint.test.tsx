@@ -10,7 +10,7 @@ const provider = (id: string, binary: string, availability: Availability): Provi
   login: `${binary} auth login`,
   availability,
   models: [],
-  web: true,
+  tools: ["webSearch", "webFetch"],
 });
 
 describe("ProviderHint", () => {

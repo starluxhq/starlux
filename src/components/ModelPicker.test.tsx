@@ -10,7 +10,7 @@ const provider = (models: string[]): Provider => ({
   login: "opencode auth login",
   availability: { state: "ready", plan: null },
   models,
-  web: true,
+  tools: ["webSearch", "webFetch"],
 });
 
 describe("ModelMenu", () => {

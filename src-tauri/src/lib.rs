@@ -104,7 +104,8 @@ pub fn run() {
             commands::set_pinned,
             commands::truncate_after,
             commands::set_agent_dir,
-            commands::set_web,
+            commands::tools,
+            commands::set_tool,
             commands::run_prompt,
             commands::cancel_run,
         ])

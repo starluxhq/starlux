@@ -10,7 +10,6 @@ const item = (over: Partial<Conversation> = {}): Conversation => ({
   sessionId: null,
   model: null,
   agentDir: null,
-  web: false,
   updatedAt: Date.now(),
   pinned: false,
   ...over,

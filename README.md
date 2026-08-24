@@ -50,15 +50,16 @@ agent on the command line, `opencode` through a configuration handed to it in it
 environment, and `gemini` through a policy file written fresh for every run,
 because it is the one that reads files by default when run headless.
 
-Two grants can be given, per conversation, and neither implies the other.
-**Working in a folder** is opt-in and starts by choosing that folder: inside it the
-assistant reads and edits without asking, because a launcher has nowhere to put an
-approval prompt. **Web** is a separate toggle that adds searching and fetching by
-name, so looking something up never costs a folder. Whatever your own CLI settings
-refuse is still refused, and attaching a file grants only that file. Grants are
-stored with the conversation rather than the window, so releasing one takes effect
-on the next turn wherever it is asked — and the Quick Bar shows both without being
-able to change either.
+Two kinds of grant can be given, and neither implies the other. **Working in a
+folder** belongs to one conversation and starts by choosing that folder: inside it
+the assistant reads and edits without asking, because a launcher has nowhere to put
+an approval prompt. **Tools** are switched on in Settings and apply to the whole
+app — web search and web fetch are separate switches, named individually because
+the CLIs name them individually, so looking something up never costs a folder.
+Whatever your own CLI settings refuse is still refused, and attaching a file grants
+only that file. Both are stored in SQLite rather than in a window, so a run reads
+back what was actually granted rather than what the window that asked believed —
+and the Quick Bar shows both without being able to change either.
 
 [SECURITY.md](SECURITY.md) has the rest: the artifact sandbox, the content
 policies, and what to do if you find a hole in any of it.
