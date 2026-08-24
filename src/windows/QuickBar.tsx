@@ -11,6 +11,7 @@ import Attachments from "../components/Attachments";
 import Composer from "../components/Composer";
 import ContextMeter from "../components/ContextMeter";
 import { ModelMenu, ModelTrigger } from "../components/ModelPicker";
+import { ProviderMenu, ProviderTrigger } from "../components/ProviderPicker";
 import ProviderHint from "../components/ProviderHint";
 import Turn from "../components/Turn";
 import { onAsk, onStream } from "../lib/events";
@@ -29,7 +30,7 @@ const THREAD_HEIGHT = 450;
 export default function QuickBar() {
   const [draft, setDraft] = useState("");
   const [files, setFiles] = useState<Attachment[]>([]);
-  const [picking, setPicking] = useState(false);
+  const [picking, setPicking] = useState<"provider" | "model" | null>(null);
   const {
     providers,
     limits,
@@ -44,6 +45,7 @@ export default function QuickBar() {
     retry,
     edit,
     stop,
+    selectProvider,
     selectModel,
     loadProviders,
     newConversation,
@@ -103,8 +105,7 @@ export default function QuickBar() {
   useEffect(() => {
     if (!picking) return;
     const dismiss = (event: MouseEvent) => {
-      if (!(event.target as HTMLElement).closest(`[${PICKER}]`))
-        setPicking(false);
+      if (!(event.target as HTMLElement).closest(`[${PICKER}]`)) setPicking(null);
     };
     // Capture: the composer holds focus and stops the bubble phase.
     document.addEventListener("mousedown", dismiss, true);
@@ -116,7 +117,7 @@ export default function QuickBar() {
       const accel = event.metaKey || event.ctrlKey;
 
       if (event.key === "Escape") {
-        if (picking) setPicking(false);
+        if (picking) setPicking(null);
         else if (status === "streaming") void stop();
         else void hideQuickBar();
         return;
@@ -224,12 +225,19 @@ export default function QuickBar() {
           {context ? <ContextMeter context={context} /> : null}
 
           {model ? (
-            <ModelTrigger
-              providerId={providerId}
-              model={model}
-              open={picking}
-              onToggle={() => setPicking((was) => !was)}
-            />
+            <>
+              <ProviderTrigger
+                providers={providers}
+                providerId={providerId}
+                open={picking === "provider"}
+                onToggle={() => setPicking((was) => (was === "provider" ? null : "provider"))}
+              />
+              <ModelTrigger
+                model={model}
+                open={picking === "model"}
+                onToggle={() => setPicking((was) => (was === "model" ? null : "model"))}
+              />
+            </>
           ) : (
             <ProviderHint providers={providers} />
           )}
@@ -254,16 +262,27 @@ export default function QuickBar() {
         </div>
       </div>
 
-      {picking && model ? (
-        <ModelMenu
+      {picking === "provider" ? (
+        <ProviderMenu
           className="px-3 pt-2"
           providers={providers}
           providerId={providerId}
-          model={model}
           limits={limits}
-          onSelect={(nextProvider, nextModel) => {
-            selectModel(nextProvider, nextModel);
-            setPicking(false);
+          onSelect={(next) => {
+            selectProvider(next);
+            setPicking(null);
+          }}
+        />
+      ) : null}
+
+      {picking === "model" && model ? (
+        <ModelMenu
+          className="px-3 pt-2"
+          provider={providers.find((provider) => provider.id === providerId)}
+          model={model}
+          onSelect={(next) => {
+            selectModel(next);
+            setPicking(null);
           }}
         />
       ) : null}

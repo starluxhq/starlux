@@ -1,100 +1,61 @@
-import { cleanup, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
-import { ModelMenu } from "./ModelPicker";
-import type { Availability, Provider, RateLimit } from "../lib/types";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { ModelMenu, ModelTrigger } from "./ModelPicker";
+import type { Provider } from "../lib/types";
 
-const NOW = Math.floor(Date.now() / 1000);
-
-const provider = (availability: Availability): Provider => ({
-  id: "claude-cli",
-  name: "Claude Code",
-  binary: "claude",
+const provider = (models: string[]): Provider => ({
+  id: "opencode-cli",
+  name: "opencode",
+  binary: "opencode",
   login: "opencode auth login",
-  availability,
-  models: ["opus", "sonnet"],
+  availability: { state: "ready", plan: null },
+  models,
   web: true,
 });
 
-const limit = (over: Partial<RateLimit> = {}): RateLimit => ({
-  providerId: "claude-cli",
-  kind: "five_hour",
-  status: "allowed",
-  resetsAt: NOW + 3600,
-  usingOverage: false,
-  observedAt: NOW,
-  ...over,
+describe("ModelMenu", () => {
+  it("offers the chosen provider's models and nobody else's", () => {
+    const onSelect = vi.fn();
+    render(
+      <ModelMenu provider={provider(["opus", "sonnet"])} model="opus" onSelect={onSelect} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Sonnet" }));
+    expect(onSelect).toHaveBeenCalledWith("sonnet");
+  });
+
+  // A vendor-prefixed id is listed in full: with 29 of them under one provider,
+  // the prefix is what tells two apart.
+  it("lists a vendor-prefixed model by its whole id", () => {
+    render(
+      <ModelMenu
+        provider={provider(["opencode/hy3-free", "opencode-go/hy3"])}
+        model="opencode-go/hy3"
+        onSelect={() => {}}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "opencode/hy3-free" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "opencode-go/hy3" })).toBeTruthy();
+  });
+
+  it("says nothing at all when there is no provider to speak for", () => {
+    const { container } = render(
+      <ModelMenu provider={undefined} model="opus" onSelect={() => {}} />,
+    );
+    expect(container.textContent).toBe("");
+  });
 });
 
-// Several cases below are only meaningful as a pair, so each render replaces
-// the last rather than stacking beside it.
-const menu = (availability: Availability, limits: Record<string, RateLimit> = {}) => {
-  cleanup();
-  return render(
-    <ModelMenu
-      providers={[provider(availability)]}
-      providerId="claude-cli"
-      model="opus"
-      limits={limits}
-      onSelect={() => {}}
-    />,
-  );
-};
-
-describe("ModelMenu", () => {
-  it("shows the window for a provider that can be run", () => {
-    menu({ state: "ready", plan: "max" }, { "claude-cli": limit() });
-    expect(screen.getByText(/5-hour resets/)).toBeTruthy();
+describe("ModelTrigger", () => {
+  // The provider is named right beside it, so repeating the vendor here would
+  // spend the bar's width saying the same thing twice.
+  it("drops the vendor the provider trigger already names", () => {
+    render(<ModelTrigger model="opencode-go/glm-5.3" open={false} onToggle={() => {}} />);
+    expect(screen.getByRole("button").textContent).toBe("glm-5.3");
   });
 
-  // The defect that escaped: a window the user is no longer inside, shown for
-  // an account nothing was run against.
-  it("shows no window for a provider that cannot be run", () => {
-    for (const availability of [{ state: "signedOut" }, { state: "missing" }] as Availability[]) {
-      menu(availability, { "claude-cli": limit() });
-      expect(screen.queryByText(/resets/)).toBeNull();
-      screen.getByText(/Claude Code/);
-    }
-  });
-
-  it("drops a window whose reset has already passed", () => {
-    menu({ state: "ready", plan: null }, { "claude-cli": limit({ resetsAt: NOW - 60 }) });
-    expect(screen.queryByText(/resets/)).toBeNull();
-  });
-
-  it("names the plan in the header only when there is one", () => {
-    menu({ state: "ready", plan: "max" });
-    expect(screen.getByText(/Claude Code · max/)).toBeTruthy();
-    menu({ state: "ready", plan: null });
-    expect(screen.queryByText(/Claude Code ·/)).toBeNull();
-  });
-
-  it("offers models when ready and a fix when signed out", () => {
-    menu({ state: "ready", plan: null });
-    expect(screen.getByRole("button", { name: /Opus/ })).toBeTruthy();
-
-    menu({ state: "signedOut" });
-    expect(screen.queryByRole("button", { name: /Opus/ })).toBeNull();
-    // The command comes from the provider, not from its binary name: `opencode
-    // login` is not a command, and a launcher that guesses sends the user
-    // somewhere that does not exist.
-    expect(screen.getByText(/Signed out — run `opencode auth login`/)).toBeTruthy();
-  });
-
-  it("says the provider is missing rather than signed out when it is absent", () => {
-    menu({ state: "missing" });
-    expect(screen.getByText(/Not found — install `claude`/)).toBeTruthy();
-  });
-
-  it("ages the window only once the reading is stale", () => {
-    menu({ state: "ready", plan: null }, { "claude-cli": limit() });
-    expect(screen.queryByText(/ago/)).toBeNull();
-
-    menu({ state: "ready", plan: null }, { "claude-cli": limit({ observedAt: NOW - 30 * 60 }) });
-    expect(screen.getByText(/ago/)).toBeTruthy();
-  });
-
-  it("leads with the status when the window is not allowing requests", () => {
-    menu({ state: "ready", plan: null }, { "claude-cli": limit({ status: "rejected_hard" }) });
-    expect(screen.getByText(/rejected hard ·/)).toBeTruthy();
+  it("capitalises a bare alias", () => {
+    render(<ModelTrigger model="opus" open={false} onToggle={() => {}} />);
+    expect(screen.getByRole("button").textContent).toBe("Opus");
   });
 });

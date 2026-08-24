@@ -62,6 +62,10 @@ pub const SELECTED_PROVIDER: &str = "selected_provider";
 pub const SELECTED_MODEL: &str = "selected_model";
 /// Whether the Workspace's conversation list is slid away.
 pub const SIDEBAR_COLLAPSED: &str = "sidebar_collapsed";
+/// One row per provider holding the model last asked of it, so switching
+/// provider and back returns to what you were using rather than to whatever
+/// sorts first.
+const MODEL_PREFIX: &str = "model:";
 /// One row per provider holding only its latest window. A snapshot of something
 /// that moves, not a history: `messages` is where anything worth keeping goes.
 const RATE_LIMIT_PREFIX: &str = "rate_limit:";
@@ -369,6 +373,20 @@ impl Db {
             |row| row.get(0),
         )
         .optional()
+    }
+
+    pub fn remember_model(&self, provider_id: &str, model: &str) -> rusqlite::Result<()> {
+        self.set_setting(&format!("{MODEL_PREFIX}{provider_id}"), Some(model))
+    }
+
+    pub fn remembered_models(&self) -> rusqlite::Result<Vec<(String, String)>> {
+        let conn = self.0.lock().unwrap();
+        let mut statement = conn.prepare("SELECT key, value FROM settings WHERE key LIKE ?1")?;
+        let rows = statement.query_map(params![format!("{MODEL_PREFIX}%")], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        rows.map(|row| row.map(|(key, model)| (key[MODEL_PREFIX.len()..].to_owned(), model)))
+            .collect()
     }
 
     pub fn set_rate_limit(&self, limit: &RateLimit) -> rusqlite::Result<()> {
@@ -940,6 +958,47 @@ mod tests {
         let stored = db.rate_limits().unwrap();
         assert_eq!(stored.len(), 1);
         assert_eq!(stored[0].provider_id, "claude-cli");
+    }
+
+    /// Switching provider has to choose a model, and choosing the one that
+    /// sorts first would throw away what the user was actually using.
+    #[test]
+    fn each_provider_remembers_the_model_last_asked_of_it() {
+        let db = db();
+        db.remember_model("claude-cli", "opus").unwrap();
+        db.remember_model("opencode-cli", "opencode-go/glm-5.3")
+            .unwrap();
+        db.remember_model("claude-cli", "haiku").unwrap();
+
+        let mut remembered = db.remembered_models().unwrap();
+        remembered.sort();
+        assert_eq!(
+            remembered,
+            [
+                ("claude-cli".to_owned(), "haiku".to_owned()),
+                ("opencode-cli".to_owned(), "opencode-go/glm-5.3".to_owned()),
+            ]
+        );
+    }
+
+    /// They share the settings table with the subscription windows, and neither
+    /// may read the other's rows.
+    #[test]
+    fn a_remembered_model_is_not_mistaken_for_a_window() {
+        let db = db();
+        db.remember_model("claude-cli", "opus").unwrap();
+        db.set_rate_limit(&RateLimit {
+            provider_id: "claude-cli".into(),
+            kind: "five_hour".into(),
+            status: "allowed".into(),
+            resets_at: None,
+            using_overage: false,
+            observed_at: 1,
+        })
+        .unwrap();
+
+        assert_eq!(db.remembered_models().unwrap().len(), 1);
+        assert_eq!(db.rate_limits().unwrap().len(), 1);
     }
 
     #[test]

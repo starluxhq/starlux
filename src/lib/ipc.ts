@@ -19,6 +19,9 @@ export const setQuickbarHeight = (height: number) =>
 export const listProviders = () => invoke<Provider[]>("list_providers");
 export const selectedModel = () => invoke<Selection | null>("selected_model");
 
+/** What each provider was last asked for, so switching back returns to it. */
+export const rememberedModels = () => invoke<Selection[]>("remembered_models");
+
 /** The last window each provider reported, so the bar has something to show
  *  before the first run of this launch refreshes it. */
 export const rateLimits = () => invoke<RateLimit[]>("rate_limits");

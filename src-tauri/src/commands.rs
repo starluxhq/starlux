@@ -91,7 +91,22 @@ pub async fn set_selected_model(
 ) -> Result<(), String> {
     db::query(&app, move |db| {
         db.set_setting(db::SELECTED_PROVIDER, Some(&provider_id))?;
-        db.set_setting(db::SELECTED_MODEL, Some(&model))
+        db.set_setting(db::SELECTED_MODEL, Some(&model))?;
+        db.remember_model(&provider_id, &model)
+    })
+    .await
+}
+
+/// What each provider was last asked for. Picking a provider still has to pick
+/// a model, and the one that sorts first is rarely the one you were using.
+#[tauri::command]
+pub async fn remembered_models(app: AppHandle) -> Result<Vec<Selection>, String> {
+    db::query(&app, |db| {
+        Ok(db
+            .remembered_models()?
+            .into_iter()
+            .map(|(provider_id, model)| Selection { provider_id, model })
+            .collect())
     })
     .await
 }

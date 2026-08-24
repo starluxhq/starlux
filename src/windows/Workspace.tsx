@@ -7,6 +7,7 @@ import Composer from "../components/Composer";
 import ConversationList from "../components/ConversationList";
 import ContextMeter from "../components/ContextMeter";
 import { ModelMenu, ModelTrigger } from "../components/ModelPicker";
+import { ProviderMenu, ProviderTrigger } from "../components/ProviderPicker";
 import ProviderHint from "../components/ProviderHint";
 import Turn from "../components/Turn";
 import SidebarToolbar from "../components/SidebarToolbar";
@@ -23,7 +24,7 @@ import { useConversations } from "../stores/useConversations";
 export default function Workspace() {
   const [draft, setDraft] = useState("");
   const [files, setFiles] = useState<Attachment[]>([]);
-  const [picking, setPicking] = useState(false);
+  const [picking, setPicking] = useState<"provider" | "model" | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   // The stored state has to land without sliding: restoring a hidden sidebar
   // is not a move the user made, so only their own toggles are animated.
@@ -41,6 +42,7 @@ export default function Workspace() {
     loadProviders,
     openConversation,
     newConversation,
+    selectProvider,
     selectModel,
     setAgentDir,
     web,
@@ -79,7 +81,7 @@ export default function Workspace() {
   useEffect(() => {
     if (!picking) return;
     const dismiss = (event: MouseEvent) => {
-      if (!(event.target as HTMLElement).closest(`[${PICKER}]`)) setPicking(false);
+      if (!(event.target as HTMLElement).closest(`[${PICKER}]`)) setPicking(null);
     };
     document.addEventListener("mousedown", dismiss, true);
     return () => document.removeEventListener("mousedown", dismiss, true);
@@ -94,7 +96,7 @@ export default function Workspace() {
     const onKeyDown = (event: KeyboardEvent) => {
       const accel = event.metaKey || event.ctrlKey;
       // An open artifact is the nearest thing to dismiss, so it goes first.
-      if (event.key === "Escape" && picking) setPicking(false);
+      if (event.key === "Escape" && picking) setPicking(null);
       else if (event.key === "Escape" && expanded) collapse();
       else if (event.key === "Escape" && status === "streaming") void stop();
       if (accel && event.key.toLowerCase() === "n") {
@@ -230,16 +232,27 @@ export default function Workspace() {
           </div>
 
           <div className="relative shrink-0 border-t border-white/6 px-6 py-4">
-            {picking && model ? (
-              <ModelMenu
+            {picking === "provider" ? (
+              <ProviderMenu
                 className="absolute right-6 bottom-full mb-2"
                 providers={providers}
                 providerId={providerId}
-                model={model}
                 limits={limits}
-                onSelect={(nextProvider, nextModel) => {
-                  selectModel(nextProvider, nextModel);
-                  setPicking(false);
+                onSelect={(next) => {
+                  selectProvider(next);
+                  setPicking(null);
+                }}
+              />
+            ) : null}
+
+            {picking === "model" && model ? (
+              <ModelMenu
+                className="absolute right-6 bottom-full mb-2"
+                provider={providers.find((provider) => provider.id === providerId)}
+                model={model}
+                onSelect={(next) => {
+                  selectModel(next);
+                  setPicking(null);
                 }}
               />
             ) : null}
@@ -272,12 +285,19 @@ export default function Workspace() {
               {context ? <ContextMeter context={context} /> : null}
 
               {model ? (
-                <ModelTrigger
-                  providerId={providerId}
-                  model={model}
-                  open={picking}
-                  onToggle={() => setPicking((was) => !was)}
-                />
+                <>
+                  <ProviderTrigger
+                    providers={providers}
+                    providerId={providerId}
+                    open={picking === "provider"}
+                    onToggle={() => setPicking((was) => (was === "provider" ? null : "provider"))}
+                  />
+                  <ModelTrigger
+                    model={model}
+                    open={picking === "model"}
+                    onToggle={() => setPicking((was) => (was === "model" ? null : "model"))}
+                  />
+                </>
               ) : (
                 <ProviderHint providers={providers} />
               )}
