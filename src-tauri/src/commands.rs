@@ -339,6 +339,7 @@ pub async fn run_prompt(
             named_by,
             conversation_id,
             asked,
+            request.model.clone(),
         ));
     }
 

@@ -83,18 +83,29 @@ impl CliAdapter for GeminiAdapter {
         }
     }
 
-    fn title_invocation(&self, question: &str) -> Invocation {
+    /// Named on the conversation's own model. Gemini has no small model worth
+    /// singling out, so the choice is between the one the user picked and
+    /// whichever the CLI would have defaulted to.
+    fn title_invocation(&self, question: &str, model: Option<&str>) -> Invocation {
+        let mut args = vec![
+            "-o".into(),
+            "text".into(),
+            "--skip-trust".into(),
+            "--policy".into(),
+            policy_path(TITLE_POLICY).to_string_lossy().into_owned(),
+        ];
+
+        if let Some(model) = model {
+            args.push("-m".into());
+            args.push(model.to_owned());
+        }
+
+        args.push("-p".into());
+        args.push(format!("{}\n\n{question}", system_prompt::title()));
+
         Invocation {
             program: "gemini".into(),
-            args: vec![
-                "-o".into(),
-                "text".into(),
-                "--skip-trust".into(),
-                "--policy".into(),
-                policy_path(TITLE_POLICY).to_string_lossy().into_owned(),
-                "-p".into(),
-                format!("{}\n\n{question}", system_prompt::title()),
-            ],
+            args,
             stdin: None,
             cwd: None,
             env: Vec::new(),
@@ -426,7 +437,7 @@ mod tests {
     fn every_run_is_pointed_at_a_policy() {
         for invocation in [
             GeminiAdapter.invocation(&request(), &[]),
-            GeminiAdapter.title_invocation("how do pulsars work?"),
+            GeminiAdapter.title_invocation("how do pulsars work?", None),
         ] {
             let at = invocation
                 .args

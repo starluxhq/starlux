@@ -112,8 +112,10 @@ impl CliAdapter for ClaudeAdapter {
 
     /// Plain text out, no session in: resuming would carry the whole thread and
     /// cost exactly the tokens this run exists to avoid. No `cwd` either — it
-    /// reads what it is given on stdin and has no reason to see a disk.
-    fn title_invocation(&self, question: &str) -> Invocation {
+    /// reads what it is given on stdin and has no reason to see a disk. The
+    /// conversation's model is declined for `TITLE_MODEL`, which every account
+    /// with a model has.
+    fn title_invocation(&self, question: &str, _model: Option<&str>) -> Invocation {
         Invocation {
             program: "claude".into(),
             args: vec![
@@ -735,7 +737,7 @@ mod tests {
 
     #[test]
     fn naming_a_conversation_is_a_cheap_toolless_one_shot() {
-        let invocation = ClaudeAdapter.title_invocation("what is a spectral class?");
+        let invocation = ClaudeAdapter.title_invocation("what is a spectral class?", None);
         assert_eq!(invocation.program, "claude");
         assert_eq!(invocation.cwd, None);
         assert_eq!(
@@ -884,7 +886,7 @@ mod tests {
     /// it should ever reach the network.
     #[test]
     fn naming_a_conversation_never_gains_a_tool() {
-        let invocation = ClaudeAdapter.title_invocation("what is a spectral class?");
+        let invocation = ClaudeAdapter.title_invocation("what is a spectral class?", None);
         assert_eq!(allowlist(&invocation), None);
     }
 

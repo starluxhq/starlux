@@ -32,8 +32,17 @@ pub async fn name_conversation(
     provider_id: String,
     conversation_id: String,
     question: String,
+    model: Option<String>,
 ) {
-    match write_title(&app, &provider_id, &conversation_id, &question).await {
+    match write_title(
+        &app,
+        &provider_id,
+        &conversation_id,
+        &question,
+        model.as_deref(),
+    )
+    .await
+    {
         Ok(Some(title)) => log::info!("named conversation {conversation_id}: {title}"),
         Ok(None) => {}
         // Never surfaced: the conversation already has a serviceable title, and
@@ -47,13 +56,14 @@ async fn write_title(
     provider_id: &str,
     conversation_id: &str,
     question: &str,
+    model: Option<&str>,
 ) -> Result<Option<String>, String> {
     let Some(adapter) = adapters::for_provider(provider_id) else {
         return Ok(None);
     };
 
     adapter.prepare_title()?;
-    let printed = run(adapter.title_invocation(&excerpt(question))).await?;
+    let printed = run(adapter.title_invocation(&excerpt(question), model)).await?;
     let Some(title) = clean(&adapter.title_text(&printed)) else {
         return Ok(None);
     };
