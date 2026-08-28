@@ -15,8 +15,9 @@ agents.
     markdown plugins.
 - `src-tauri/src/` — Rust core.
   - `windows/` per-platform window behaviour and **nothing else**.
-  - `engine/` the CLI bridge: `cli.rs` spawns and streams, `adapters/` parses one
-    binary each, `system_prompt.rs` is what every run is told.
+  - `engine/` the CLI bridge: `cli.rs` spawns and streams a provider's stdout,
+    `acp.rs` holds a JSON-RPC conversation instead, `adapters/` parses one binary
+    each, `system_prompt.rs` is what every run is told.
   - `db.rs` SQLite, `commands.rs` the IPC surface, `platform.rs` env guards.
 - `capabilities/*.json` scope Tauri permissions per window.
 - Tests live beside the code: `#[cfg(test)] mod tests` in the same Rust file,
@@ -53,8 +54,19 @@ compiles `windows/macos.rs` or `windows/generic.rs`.
 ## Architecture Rules
 
 - **Never build a shell string** for a CLI provider. Commands are argv arrays and
-  prompts go over stdin — except where a CLI hangs on an open one, as opencode
-  does, and the prompt goes in argv instead. Still an array, never a string.
+  prompts go over stdin — except where a CLI hangs on an open one, as `opencode
+  run` does, and the prompt goes in argv instead. Still an array, never a string.
+- **Two engines, and the second is earned.** `cli` reads a provider's stdout;
+  `acp` speaks the Agent Client Protocol over stdio. A provider moves to `acp`
+  only where that buys something the first cannot: `opencode run` prints the
+  whole answer in one event when the turn is over, and only its ACP mode streams.
+  Which one a provider uses is `providers::speaks_acp`, not a check at the call
+  site.
+- **What bounds a run is the same under either engine.** The agent, its
+  permission map and the system prompt are what the adapter builds; ACP changes
+  only how they are delivered, since `opencode acp` takes no `--agent` flag and
+  ignores `default_agent`. A run that cannot select that agent must fail rather
+  than proceed on the provider's defaults.
 - **Chat-only is the default.** A run declares no tools and no MCP servers, so a
   hotkey question cannot reach the filesystem or the network.
 - **The grants are independent.** A folder belongs to a conversation; the tools

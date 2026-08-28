@@ -6,13 +6,16 @@
 //! chat-only grant that has quietly stopped being one shows up there and
 //! nowhere else — no unit test can see past the argv it asserts.
 //!
+//! A provider driven over ACP prints what `acp::run` spawns, which is what a
+//! real turn uses; its `run` argv is only ever the naming call now.
+//!
 //! ```sh
 //! cargo run --example invocation -- opencode-cli "what colour is this?" blue.png
 //! SEARCH=1 MODEL=opus cargo run --example invocation -- claude-cli "what shipped?"
 //! FETCH=1 cargo run --example invocation -- gemini-cli "what does example.com say?"
 //! TITLE=1 cargo run --example invocation -- claude-cli "how do pulsars work?"
 //! ```
-use starlux_lib::engine::{adapters, file_name, mime_of, Loaded, RunRequest, Tools};
+use starlux_lib::engine::{adapters, file_name, mime_of, providers, Loaded, RunRequest, Tools};
 
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -52,6 +55,8 @@ fn main() {
     }
     let invocation = if std::env::var("TITLE").is_ok() {
         adapter.title_invocation(&req.prompt)
+    } else if providers::speaks_acp(&provider) {
+        adapters::opencode::acp_invocation(&req)
     } else {
         adapter.invocation(&req, &files)
     };

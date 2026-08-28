@@ -138,6 +138,11 @@ reproducible: run a provider chat-only, ask it to read a file whose contents are
 a known string, and grep the output for that string. No unit test can see past
 the argv it asserts, and one of the three CLIs reads files by default.
 
+For opencode this prints what `acp::run` spawns, which is what a real turn uses;
+its `run` argv is only the naming call now. The agent that bounds an ACP turn is
+chosen over the wire rather than in argv, so the canary there has to be run
+through the protocol, not by pasting the argv into a shell.
+
 ## Reporting bugs
 
 Please include your OS and version, desktop environment and session type on

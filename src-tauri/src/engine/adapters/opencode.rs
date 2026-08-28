@@ -6,7 +6,7 @@ use crate::engine::{
 };
 
 /// Namespaced so a user's own agent of the same name is never the one that runs.
-const CHAT_AGENT: &str = "starlux-chat";
+pub const CHAT_AGENT: &str = "starlux-chat";
 const TITLE_AGENT: &str = "starlux-title";
 
 /// opencode's own name for its fetcher, and the only tool Starlux grants that
@@ -19,6 +19,26 @@ const WEB_TOOL: &str = "webfetch";
 /// theirs, and a launcher has no business editing it. This is opencode's
 /// answer to Claude's `--agents` argv JSON.
 const CONFIG_ENV: &str = "OPENCODE_CONFIG_CONTENT";
+
+/// What `acp::run` spawns. The same agent the CLI path builds, plus the model
+/// at the root of the config: `opencode acp` takes neither in argv, and picks
+/// the agent up only when it is asked for over the wire by name.
+pub fn acp_invocation(req: &RunRequest) -> Invocation {
+    let mut config = serde_json::json!({ "agent": chat_agent(req) });
+    if let Some(model) = &req.model {
+        config["model"] = model.clone().into();
+    }
+
+    Invocation {
+        program: "opencode".into(),
+        args: vec!["acp".into()],
+        // The protocol is the conversation, so stdin stays open — the hang that
+        // forces `run`'s prompt into argv is a `run` problem, not opencode's.
+        stdin: None,
+        cwd: req.agent_dir.clone(),
+        env: vec![(CONFIG_ENV.into(), config.to_string())],
+    }
+}
 
 pub struct OpencodeAdapter;
 
@@ -508,6 +528,56 @@ mod tests {
         );
         assert_eq!(invocation.cwd, Some(PathBuf::from("/tmp/project")));
         assert!(env_of(&invocation)["agent"][CHAT_AGENT]["prompt"].is_null());
+    }
+
+    /// The ACP run is bounded by the same agent as the CLI run — it just has to
+    /// be asked for by name over the wire, because `opencode acp` takes no
+    /// `--agent` flag and ignores `default_agent`.
+    #[test]
+    fn the_acp_run_carries_the_same_agent_and_denies_the_same_tools() {
+        let invocation = acp_invocation(&request());
+        assert_eq!(invocation.args, ["acp"]);
+        assert_eq!(
+            permission(&invocation, CHAT_AGENT),
+            serde_json::json!({ "*": "deny" })
+        );
+        assert!(env_of(&invocation)["agent"][CHAT_AGENT]["prompt"]
+            .as_str()
+            .unwrap()
+            .starts_with("You are Starlux"));
+    }
+
+    /// It takes no `-m` either, so the model rides at the root of the config.
+    #[test]
+    fn the_acp_run_names_its_model_in_the_config() {
+        assert_eq!(
+            env_of(&acp_invocation(&request()))["model"],
+            "opencode/hy3-free"
+        );
+    }
+
+    #[test]
+    fn the_acp_run_grants_the_fetcher_when_the_app_does() {
+        let mut req = request();
+        req.tools.web_fetch = true;
+        assert_eq!(
+            permission(&acp_invocation(&req), CHAT_AGENT),
+            serde_json::json!({ "*": "deny", "webfetch": "allow" })
+        );
+    }
+
+    /// Agent mode is a cwd here as it is there: opencode takes its directory
+    /// from the process's own either way.
+    #[test]
+    fn the_acp_run_takes_its_folder_as_a_directory() {
+        let mut req = request();
+        req.agent_dir = Some(PathBuf::from("/tmp/project"));
+        let invocation = acp_invocation(&req);
+        assert_eq!(invocation.cwd, Some(PathBuf::from("/tmp/project")));
+        assert_eq!(
+            permission(&invocation, CHAT_AGENT),
+            serde_json::json!({ "*": "allow" })
+        );
     }
 
     #[test]

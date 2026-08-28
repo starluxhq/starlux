@@ -20,11 +20,11 @@ const MAX_ATTACHMENT_BYTES: u64 = 10 * 1024 * 1024;
 pub struct Runs(Mutex<HashMap<String, oneshot::Sender<()>>>);
 
 impl Runs {
-    fn register(&self, run_id: String, cancel: oneshot::Sender<()>) {
+    pub(super) fn register(&self, run_id: String, cancel: oneshot::Sender<()>) {
         self.0.lock().unwrap().insert(run_id, cancel);
     }
 
-    fn finish(&self, run_id: &str) {
+    pub(super) fn finish(&self, run_id: &str) {
         self.0.lock().unwrap().remove(run_id);
     }
 
@@ -202,7 +202,7 @@ pub async fn run(app: tauri::AppHandle, req: RunRequest, sink: Sink) -> Result<(
 
 /// Named in the message, because "one of your attachments is too large" sends
 /// the user back to a file picker to find out which.
-async fn load(paths: &[PathBuf]) -> Result<Vec<Loaded>, String> {
+pub(super) async fn load(paths: &[PathBuf]) -> Result<Vec<Loaded>, String> {
     let mut files = Vec::with_capacity(paths.len());
     for path in paths {
         let name = file_name(path);

@@ -61,6 +61,10 @@ struct Entry {
     /// one flag for the whole session rather than a per-model list.
     efforts: &'static [&'static str],
     tools: &'static [&'static str],
+    /// Driven over the Agent Client Protocol rather than by reading a stream of
+    /// lines. Only where that buys something: opencode's `run` hands the whole
+    /// answer over at once, and its ACP mode streams.
+    acp: bool,
 }
 
 const CATALOG: &[Entry] = &[
@@ -74,6 +78,7 @@ const CATALOG: &[Entry] = &[
         // about when they are not one of these.
         efforts: &["low", "medium", "high", "xhigh", "max"],
         tools: &[WEB_SEARCH, WEB_FETCH],
+        acp: false,
     },
     Entry {
         id: "gemini-cli",
@@ -87,6 +92,7 @@ const CATALOG: &[Entry] = &[
         // It has no flag for this at all, so there is nothing to offer.
         efforts: &[],
         tools: &[WEB_SEARCH, WEB_FETCH],
+        acp: false,
     },
     Entry {
         id: "opencode-cli",
@@ -98,6 +104,7 @@ const CATALOG: &[Entry] = &[
         efforts: &[],
         // No search tool exists to grant, only the fetcher.
         tools: &[WEB_FETCH],
+        acp: true,
     },
 ];
 
@@ -124,6 +131,13 @@ pub fn detect() -> Vec<Provider> {
 
 /// Called when a run fails, so a sign-in or sign-out elsewhere is picked up on
 /// the next question rather than whenever the TTL happens to lapse.
+/// Whether a provider is driven over ACP rather than by reading its stdout.
+pub fn speaks_acp(provider_id: &str) -> bool {
+    CATALOG
+        .iter()
+        .any(|entry| entry.id == provider_id && entry.acp)
+}
+
 pub fn invalidate() {
     *CACHE.lock().unwrap() = None;
 }
@@ -377,6 +391,16 @@ mod tests {
         assert!(available_models(gemini)
             .iter()
             .all(|model| model.efforts.is_empty()));
+    }
+
+    /// Only where it buys something. `opencode run` hands the whole answer over
+    /// at once and its ACP mode streams; the other two stream already.
+    #[test]
+    fn only_opencode_is_driven_over_acp() {
+        assert!(speaks_acp("opencode-cli"));
+        assert!(!speaks_acp("claude-cli"));
+        assert!(!speaks_acp("gemini-cli"));
+        assert!(!speaks_acp("nothing-of-the-sort"));
     }
 
     fn auth(json: &str) -> Availability {
