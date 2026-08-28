@@ -4,7 +4,7 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, Window};
 
 use crate::db::{self, Conversation, Message, Thread};
-use crate::engine::cli::{self, Runs};
+use crate::engine::cli::Runs;
 use crate::engine::providers::{self, Provider};
 use crate::engine::sink::Sink;
 use crate::engine::title;
@@ -342,7 +342,7 @@ pub async fn run_prompt(
         ));
     }
 
-    cli::run(app, request, sink).await
+    engine::run(app, request, sink).await
 }
 
 #[tauri::command]

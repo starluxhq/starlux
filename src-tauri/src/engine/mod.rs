@@ -1,3 +1,4 @@
+pub mod acp;
 pub mod adapters;
 pub mod cli;
 pub mod providers;
@@ -12,6 +13,17 @@ use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
 
 pub use tools::Tools;
+
+/// Which engine drives this run. Two exist because one provider cannot be
+/// driven well by reading lines: `opencode run` prints the whole answer at
+/// once, and only its ACP mode streams.
+pub async fn run(app: tauri::AppHandle, req: RunRequest, sink: sink::Sink) -> Result<(), String> {
+    if providers::speaks_acp(&req.provider_id) {
+        acp::run(app, req, sink).await
+    } else {
+        cli::run(app, req, sink).await
+    }
+}
 
 static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 
