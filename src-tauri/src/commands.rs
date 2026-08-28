@@ -309,6 +309,9 @@ pub async fn run_prompt(
     let named_by = provider_id.clone();
     let (started, folder, granted) = db::query(&app, move |db| {
         let started = db.ensure_conversation(&id, &prompt, &provider_id, agent_dir.as_deref())?;
+        // The run that answers is what moves the conversation, not the picker:
+        // a provider chosen and never sent to leaves the thread where it was.
+        db.set_provider(&id, &provider_id)?;
         db.set_setting(db::ACTIVE_CONVERSATION, Some(&id))?;
         db.add_message(&id, &question)?;
         Ok((started, db.agent_dir(&id)?, db.tools()?))

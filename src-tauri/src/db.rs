@@ -233,6 +233,27 @@ impl Db {
         Ok(())
     }
 
+    /// The conversation's provider is the one that last answered in it, not the
+    /// one it opened on. Switching provider mid-thread wrote the new provider's
+    /// session and model into a row that still named the old one, and every
+    /// thread load — which each expand does — read that row back: the picker
+    /// silently returned to the provider left behind, holding a session id the
+    /// other CLI had issued.
+    ///
+    /// The session and model go with it. They belong to the provider that
+    /// issued them, and a run interrupted between here and its first answer
+    /// would otherwise leave the pair mismatched on disk.
+    pub fn set_provider(&self, id: &str, provider_id: &str) -> rusqlite::Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "UPDATE conversations
+                SET provider_id = ?2, provider_session_id = NULL, model = NULL
+              WHERE id = ?1 AND provider_id <> ?2",
+            params![id, provider_id],
+        )?;
+        Ok(())
+    }
+
     /// `None` returns the conversation to chat-only. The column is the only
     /// record of the grant, so a run reads it back rather than trusting the
     /// window that asked.
@@ -884,6 +905,30 @@ mod tests {
         let thread = db.thread("c1").unwrap().unwrap();
         assert_eq!(thread.conversation.session_id.as_deref(), Some("sess-42"));
         assert_eq!(thread.conversation.model.as_deref(), Some("sonnet"));
+    }
+
+    /// Without this the row kept the provider the thread opened on while
+    /// holding the session id another CLI had issued, and every thread load
+    /// handed that pair back to the picker.
+    #[test]
+    fn switching_provider_moves_the_conversation_and_drops_the_old_session() {
+        let db = db();
+        db.ensure_conversation("c1", "hi", "claude-cli", None)
+            .unwrap();
+        db.set_session("c1", "sess-42", Some("opus")).unwrap();
+
+        db.set_provider("c1", "opencode-cli").unwrap();
+        let moved = db.thread("c1").unwrap().unwrap().conversation;
+        assert_eq!(moved.provider_id, "opencode-cli");
+        assert_eq!(moved.session_id, None);
+        assert_eq!(moved.model, None);
+
+        db.set_session("c1", "ses_99", Some("opencode/hy3-free"))
+            .unwrap();
+        db.set_provider("c1", "opencode-cli").unwrap();
+        let stayed = db.thread("c1").unwrap().unwrap().conversation;
+        assert_eq!(stayed.session_id.as_deref(), Some("ses_99"));
+        assert_eq!(stayed.model.as_deref(), Some("opencode/hy3-free"));
     }
 
     #[test]
