@@ -24,18 +24,43 @@ describe("ModelMenu", () => {
     expect(onSelect).toHaveBeenCalledWith("sonnet");
   });
 
-  // A vendor-prefixed id is listed in full: with 29 of them under one provider,
-  // the prefix is what tells two apart.
-  it("lists a vendor-prefixed model by its whole id", () => {
-    render(
+  // opencode answers with every vendor at once, so which account a model comes
+  // from is the first thing to know about it.
+  it("gathers the models under the vendor they belong to", () => {
+    const { container } = render(
       <ModelMenu
-        provider={provider(["opencode/hy3-free", "opencode-go/hy3"])}
+        provider={provider(["opencode/hy3-free", "opencode-go/hy3", "opencode-go/glm-5.3"])}
         model="opencode-go/hy3"
         onSelect={() => {}}
       />,
     );
-    expect(screen.getByRole("button", { name: "opencode/hy3-free" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "opencode-go/hy3" })).toBeTruthy();
+
+    expect(container.textContent).toBe("opencodehy3-freeopencode-gohy3glm-5.3");
+  });
+
+  // The heading above it already says which vendor, so repeating it on every
+  // row would spend the menu's width saying the same thing thirty times.
+  it("names a model without the vendor its heading carries", () => {
+    const onSelect = vi.fn();
+    render(
+      <ModelMenu
+        provider={provider(["opencode-go/glm-5.3"])}
+        model="opencode-go/glm-5.3"
+        onSelect={onSelect}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "glm-5.3" }));
+    expect(onSelect).toHaveBeenCalledWith("opencode-go/glm-5.3");
+  });
+
+  // Claude and Gemini name their models outright, and there is no vendor to
+  // head a list of three with.
+  it("heads nothing where the ids carry no vendor", () => {
+    const { container } = render(
+      <ModelMenu provider={provider(["opus", "sonnet"])} model="opus" onSelect={() => {}} />,
+    );
+    expect(container.textContent).toBe("OpusSonnet");
   });
 
   it("says nothing at all when there is no provider to speak for", () => {
