@@ -233,6 +233,26 @@ impl Db {
         Ok(())
     }
 
+    /// What has been said in a conversation before this run, oldest first. A
+    /// turn that failed carries nothing worth repeating and an empty one has
+    /// nothing to say, so neither is returned.
+    ///
+    /// The run's own rows are excluded because a retry does not remove them:
+    /// it rewinds to the question and asks again under the same ids, and a
+    /// transcript containing the very question being asked would put it twice.
+    pub fn history(&self, id: &str, run_id: &str) -> rusqlite::Result<Vec<(String, String)>> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT role, content
+               FROM messages
+              WHERE conversation_id = ?1 AND error IS NULL AND content <> ''
+                AND id <> ?2 AND id <> ?2 || ':u'
+              ORDER BY created_at, rowid",
+        )?;
+        let rows = stmt.query_map(params![id, run_id], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        rows.collect()
+    }
+
     /// The conversation's provider is the one that last answered in it, not the
     /// one it opened on. Switching provider mid-thread wrote the new provider's
     /// session and model into a row that still named the old one, and every
@@ -905,6 +925,55 @@ mod tests {
         let thread = db.thread("c1").unwrap().unwrap();
         assert_eq!(thread.conversation.session_id.as_deref(), Some("sess-42"));
         assert_eq!(thread.conversation.model.as_deref(), Some("sonnet"));
+    }
+
+    /// A question and its answer can land in the same millisecond, so the tie
+    /// is broken by rowid — the alternative is a transcript that answers itself
+    /// before it is asked.
+    #[test]
+    fn what_is_carried_is_what_was_said_in_order() {
+        let db = db();
+        db.ensure_conversation("c1", "hi", "claude-cli", None)
+            .unwrap();
+        db.add_message("c1", &message("m1", "user", "what is a pulsar?"))
+            .unwrap();
+        db.add_message("c1", &message("m2", "assistant", "a spinning neutron star"))
+            .unwrap();
+
+        let mut failed = message("m3", "assistant", "");
+        failed.error = Some("the provider stopped".into());
+        db.add_message("c1", &failed).unwrap();
+
+        assert_eq!(
+            db.history("c1", "run-9").unwrap(),
+            [
+                ("user".to_owned(), "what is a pulsar?".to_owned()),
+                ("assistant".to_owned(), "a spinning neutron star".to_owned()),
+            ]
+        );
+    }
+
+    /// A retry rewinds to the question and asks it again under the same ids,
+    /// leaving both rows in place. Carrying them would ask it twice.
+    #[test]
+    fn a_retry_does_not_carry_the_question_it_is_retrying() {
+        let db = db();
+        db.ensure_conversation("c1", "hi", "claude-cli", None)
+            .unwrap();
+        db.add_message("c1", &message("older", "user", "what is a pulsar?"))
+            .unwrap();
+        db.add_message("c1", &message("run-1:u", "user", "and a magnetar?"))
+            .unwrap();
+        db.add_message(
+            "c1",
+            &message("run-1", "assistant", "a pulsar with a fiercer field"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            db.history("c1", "run-1").unwrap(),
+            [("user".to_owned(), "what is a pulsar?".to_owned())]
+        );
     }
 
     /// Without this the row kept the provider the thread opened on while

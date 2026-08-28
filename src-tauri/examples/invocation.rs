@@ -14,6 +14,7 @@
 //! SEARCH=1 MODEL=opus cargo run --example invocation -- claude-cli "what shipped?"
 //! FETCH=1 cargo run --example invocation -- gemini-cli "what does example.com say?"
 //! TITLE=1 cargo run --example invocation -- claude-cli "how do pulsars work?"
+//! CARRY=1 cargo run --example invocation -- claude-cli "what is my favourite element?"
 //! ```
 use starlux_lib::engine::{adapters, file_name, mime_of, providers, Loaded, RunRequest, Tools};
 
@@ -35,6 +36,23 @@ fn main() {
             web_fetch: std::env::var("FETCH").is_ok(),
         },
         attachments: args.map(Into::into).collect(),
+        // `CARRY=1` seeds the exchange a provider is handed when a conversation
+        // changes hands, so the transcript can be sent to a real CLI and the
+        // model asked whether it arrived.
+        history: if std::env::var("CARRY").is_ok() {
+            vec![
+                starlux_lib::engine::Past {
+                    role: "user".into(),
+                    text: "My favourite element is helium. Remember that.".into(),
+                },
+                starlux_lib::engine::Past {
+                    role: "assistant".into(),
+                    text: "Noted — helium.".into(),
+                },
+            ]
+        } else {
+            Vec::new()
+        },
     };
     let files: Vec<Loaded> = req
         .attachments

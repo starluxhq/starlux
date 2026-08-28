@@ -307,18 +307,34 @@ pub async fn run_prompt(
     // conversation was given, and the tools are the ones the app is set to.
     let id = conversation_id.clone();
     let named_by = provider_id.clone();
-    let (started, folder, granted) = db::query(&app, move |db| {
+    // No session and a thread already on screen is what changing provider
+    // leaves behind: the conversation is there to read, and whoever is about to
+    // answer has not seen a word of it.
+    let joining = request.session_id.is_none();
+    let run_id = request.run_id.clone();
+    let (started, folder, granted, history) = db::query(&app, move |db| {
         let started = db.ensure_conversation(&id, &prompt, &provider_id, agent_dir.as_deref())?;
         // The run that answers is what moves the conversation, not the picker:
         // a provider chosen and never sent to leaves the thread where it was.
         db.set_provider(&id, &provider_id)?;
         db.set_setting(db::ACTIVE_CONVERSATION, Some(&id))?;
+        // Read before the question is written, so what is carried is what came
+        // before it rather than the question itself.
+        let history = if joining {
+            db.history(&id, &run_id)?
+        } else {
+            Vec::new()
+        };
         db.add_message(&id, &question)?;
-        Ok((started, db.agent_dir(&id)?, db.tools()?))
+        Ok((started, db.agent_dir(&id)?, db.tools()?, history))
     })
     .await?;
     request.agent_dir = folder.map(PathBuf::from);
     request.tools = granted;
+    request.history = history
+        .into_iter()
+        .map(|(role, text)| engine::Past { role, text })
+        .collect();
     let _ = app.emit(db::CHANGED_EVENT, ());
 
     app.state::<AppState>()

@@ -3,8 +3,8 @@ use serde_json::Value;
 
 use crate::engine::tools::{Tools, WEB_FETCH, WEB_SEARCH};
 use crate::engine::{
-    now, system_prompt, CliAdapter, Context, Invocation, Loaded, ParseState, RateLimit, RunRequest,
-    StreamEvent, Usage,
+    now, question, system_prompt, CliAdapter, Context, Invocation, Loaded, ParseState, RateLimit,
+    RunRequest, StreamEvent, Usage,
 };
 
 /// Claude's names for the tools Starlux grants. Named exactly, not by category:
@@ -94,11 +94,11 @@ impl CliAdapter for ClaudeAdapter {
         // Files need the richer input, which wraps every question in a JSON
         // envelope, so it is switched on only where it buys something.
         let stdin = if files.is_empty() {
-            req.prompt.clone()
+            question(req)
         } else {
             args.push("--input-format".into());
             args.push("stream-json".into());
-            user_message(&req.prompt, files)
+            user_message(req, files)
         };
 
         Invocation {
@@ -235,8 +235,12 @@ impl CliAdapter for ClaudeAdapter {
 /// One JSONL line carrying the question and everything attached to it. Images
 /// go as base64 blocks; anything else goes as text under its own name, because
 /// a chat-only run has no tool with which to open a path.
-fn user_message(prompt: &str, files: &[Loaded]) -> String {
-    let mut content = vec![serde_json::json!({ "type": "text", "text": prompt })];
+fn user_message(req: &RunRequest, files: &[Loaded]) -> String {
+    let mut content = Vec::new();
+    if let Some(carried) = system_prompt::carried(&req.history) {
+        content.push(serde_json::json!({ "type": "text", "text": carried }));
+    }
+    content.push(serde_json::json!({ "type": "text", "text": req.prompt }));
 
     for file in files {
         content.push(match image_type(&file.mime) {
@@ -415,6 +419,7 @@ mod tests {
             agent_dir: None,
             tools: Tools::default(),
             attachments: Vec::new(),
+            history: Vec::new(),
         }
     }
 
@@ -733,6 +738,33 @@ mod tests {
             .args
             .iter()
             .any(|arg| arg == "--append-system-prompt"));
+    }
+
+    /// A provider that has just joined the conversation is told what was said
+    /// in it, ahead of the question it is being asked.
+    #[test]
+    fn a_thread_it_has_not_seen_arrives_before_the_question() {
+        let mut req = request();
+        req.history = vec![crate::engine::Past {
+            role: "assistant".into(),
+            text: "a spinning neutron star".into(),
+        }];
+
+        let plain = ClaudeAdapter.invocation(&req, &[]).stdin.unwrap();
+        assert!(plain.contains("Assistant: a spinning neutron star"));
+        assert!(plain.ends_with(&req.prompt));
+
+        let attached = ClaudeAdapter
+            .invocation(&req, &[loaded("shot.png", &[1, 2, 3])])
+            .stdin
+            .unwrap();
+        let sent: serde_json::Value = serde_json::from_str(&attached).unwrap();
+        let content = sent["message"]["content"].as_array().unwrap();
+        assert!(content[0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("a spinning neutron star"));
+        assert_eq!(content[1]["text"], req.prompt);
     }
 
     #[test]

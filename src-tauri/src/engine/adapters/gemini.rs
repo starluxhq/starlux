@@ -4,8 +4,8 @@ use serde_json::Value;
 
 use crate::engine::tools::{Tools, WEB_FETCH, WEB_SEARCH};
 use crate::engine::{
-    data_dir, system_prompt, CliAdapter, Invocation, Loaded, ParseState, RunRequest, StreamEvent,
-    Usage,
+    data_dir, question, system_prompt, CliAdapter, Invocation, Loaded, ParseState, RunRequest,
+    StreamEvent, Usage,
 };
 
 /// gemini's own names for the two tools Starlux grants, and for the two that
@@ -185,7 +185,7 @@ impl CliAdapter for GeminiAdapter {
 /// text. They go after the user's own words rather than into them, so an `@`
 /// they typed is never mistaken for one of ours.
 fn prompt(req: &RunRequest, files: &[Loaded]) -> String {
-    let mut prompt = req.prompt.clone();
+    let mut prompt = question(req);
     for file in files {
         prompt.push_str("\n\n@");
         prompt.push_str(&file.path.to_string_lossy());
@@ -324,6 +324,7 @@ mod tests {
             agent_dir: None,
             tools: Tools::default(),
             attachments: Vec::new(),
+            history: Vec::new(),
         }
     }
 
@@ -433,6 +434,20 @@ mod tests {
     /// It reads files by default when run headless — with no policy it opened a
     /// canary and printed the contents — so a run without this flag is a run
     /// with a filesystem.
+    #[test]
+    fn a_thread_it_has_not_seen_arrives_before_the_question() {
+        let mut req = request();
+        req.history = vec![crate::engine::Past {
+            role: "user".into(),
+            text: "what is a pulsar?".into(),
+        }];
+        let invocation = GeminiAdapter.invocation(&req, &[]);
+        let at = invocation.args.iter().position(|a| a == "-p").unwrap();
+        let sent = &invocation.args[at + 1];
+        assert!(sent.contains("User: what is a pulsar?"));
+        assert!(sent.ends_with(&req.prompt));
+    }
+
     #[test]
     fn every_run_is_pointed_at_a_policy() {
         for invocation in [

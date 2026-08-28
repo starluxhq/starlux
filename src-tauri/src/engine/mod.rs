@@ -72,6 +72,31 @@ pub struct RunRequest {
     /// reads them itself, under its own size cap.
     #[serde(default)]
     pub attachments: Vec<PathBuf>,
+    /// The thread so far, when whoever is answering has not seen it — which is
+    /// what changing provider mid-conversation leaves behind. Read from the
+    /// database rather than accepted from the window, and skipped by serde
+    /// entirely so a window cannot put words in the user's mouth.
+    #[serde(skip)]
+    pub history: Vec<Past>,
+}
+
+/// One turn a conversation is carrying over to a provider that did not answer
+/// it. Text only: what the previous model was thinking is not recoverable, and
+/// re-sending the files attached back then would charge for them twice.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Past {
+    pub role: String,
+    pub text: String,
+}
+
+/// The question as a provider receives it, carrying whatever the last one
+/// answered. One string, for the CLIs that take a prompt as one; ACP sends the
+/// two as separate blocks because it can.
+pub fn question(req: &RunRequest) -> String {
+    match system_prompt::carried(&req.history) {
+        Some(carried) => format!("{carried}\n\n{}", req.prompt),
+        None => req.prompt.clone(),
+    }
 }
 
 /// What was attached, as the database and the windows see it: a description,

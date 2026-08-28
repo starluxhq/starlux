@@ -225,7 +225,11 @@ async fn converse(
 fn blocks(req: &RunRequest, files: &[Loaded]) -> Vec<Value> {
     use base64::Engine as _;
 
-    let mut blocks = vec![json!({ "type": "text", "text": req.prompt })];
+    let mut blocks = Vec::new();
+    if let Some(carried) = super::system_prompt::carried(&req.history) {
+        blocks.push(json!({ "type": "text", "text": carried }));
+    }
+    blocks.push(json!({ "type": "text", "text": req.prompt }));
     for file in files {
         if file.mime.starts_with("image/") {
             blocks.push(json!({
@@ -463,6 +467,7 @@ mod tests {
             agent_dir: None,
             tools: Tools::default(),
             attachments: Vec::new(),
+            history: Vec::new(),
         }
     }
 
@@ -497,6 +502,22 @@ mod tests {
         // Named, so the model knows which file it is being shown.
         assert_eq!(blocks[2]["type"], "text");
         assert_eq!(blocks[2]["text"], "notes.txt:\nremember me");
+    }
+
+    #[test]
+    fn a_carried_thread_is_its_own_block_ahead_of_the_question() {
+        let mut req = request();
+        req.history = vec![crate::engine::Past {
+            role: "user".into(),
+            text: "what is a pulsar?".into(),
+        }];
+        let blocks = blocks(&req, &[]);
+        assert_eq!(blocks.len(), 2);
+        assert!(blocks[0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("User: what is a pulsar?"));
+        assert_eq!(blocks[1]["text"], req.prompt);
     }
 
     #[test]
