@@ -5,6 +5,7 @@ import ArtifactViewer from "../components/ArtifactViewer";
 import Attachments from "../components/Attachments";
 import Composer from "../components/Composer";
 import ContextMeter from "../components/ContextMeter";
+import { EffortMenu, EffortTrigger } from "../components/EffortPicker";
 import { ModelMenu, ModelTrigger } from "../components/ModelPicker";
 import { ProviderMenu, ProviderTrigger } from "../components/ProviderPicker";
 import ProviderHint from "../components/ProviderHint";
@@ -14,7 +15,7 @@ import Turn from "../components/Turn";
 import WindowControls from "../components/WindowControls";
 import { PICKER } from "../lib/models";
 import { platform } from "../lib/platform";
-import type { Attachment } from "../lib/types";
+import { effortsOf, type Attachment } from "../lib/types";
 import { onConversationsChanged, onFocusConversation } from "../lib/events";
 import { useMirroredWindow } from "../lib/mirror";
 import { activeConversation, saveSidebarCollapsed, sidebarCollapsed } from "../lib/ipc";
@@ -25,7 +26,7 @@ import { useConversations } from "../stores/useConversations";
 export default function Workspace() {
   const [draft, setDraft] = useState("");
   const [files, setFiles] = useState<Attachment[]>([]);
-  const [picking, setPicking] = useState<"provider" | "model" | null>(null);
+  const [picking, setPicking] = useState<"provider" | "model" | "effort" | null>(null);
   const [settings, setSettings] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [animate, setAnimate] = useState(false);
@@ -44,12 +45,18 @@ export default function Workspace() {
     newConversation,
     selectProvider,
     selectModel,
+    selectEffort,
+    effort,
     setAgentDir,
     send,
     retry,
     edit,
     stop,
   } = useChat();
+  const efforts = effortsOf(
+    providers.find((provider) => provider.id === providerId),
+    model,
+  );
   const context = currentContext(turns);
   const { items, load, rename, pin, remove } = useConversations();
   const { expanded, collapse } = useArtifact();
@@ -222,6 +229,18 @@ export default function Workspace() {
               />
             ) : null}
 
+            {picking === "effort" ? (
+              <EffortMenu
+                className="absolute right-6 bottom-full mb-2"
+                efforts={efforts}
+                effort={effort}
+                onSelect={(next) => {
+                  selectEffort(next);
+                  setPicking(null);
+                }}
+              />
+            ) : null}
+
             {picking === "model" && model ? (
               <ModelMenu
                 className="absolute right-6 bottom-full mb-2"
@@ -273,6 +292,12 @@ export default function Workspace() {
                     model={model}
                     open={picking === "model"}
                     onToggle={() => setPicking((was) => (was === "model" ? null : "model"))}
+                  />
+                  <EffortTrigger
+                    efforts={efforts}
+                    effort={effort}
+                    open={picking === "effort"}
+                    onToggle={() => setPicking((was) => (was === "effort" ? null : "effort"))}
                   />
                 </>
               ) : (

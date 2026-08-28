@@ -308,6 +308,7 @@ mod tests {
             provider_id: "gemini-cli".into(),
             prompt: "what colour is this?".into(),
             session_id: None,
+            effort: None,
             model: Some("gemini-3.5-flash".into()),
             agent_dir: None,
             tools: Tools::default(),
@@ -552,6 +553,17 @@ mod tests {
     }
 
     /// A run id crosses IPC from a window, and it names a file.
+    /// It has no flag for one, so a level chosen before switching provider
+    /// must go nowhere rather than into argv as something else.
+    #[test]
+    fn a_thinking_level_reaches_no_flag_here() {
+        let mut req = request();
+        req.effort = Some("high".into());
+        let plain = GeminiAdapter.invocation(&request(), &[]);
+        let asked = GeminiAdapter.invocation(&req, &[]);
+        assert_eq!(plain.args, asked.args);
+    }
+
     #[test]
     fn a_run_id_cannot_write_a_policy_outside_the_directory_meant_for_them() {
         let path = policy_path("../../etc/passwd");

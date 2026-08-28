@@ -10,6 +10,7 @@ import AgentMode from "../components/AgentMode";
 import Attachments from "../components/Attachments";
 import Composer from "../components/Composer";
 import ContextMeter from "../components/ContextMeter";
+import { EffortMenu, EffortTrigger } from "../components/EffortPicker";
 import { ModelMenu, ModelTrigger } from "../components/ModelPicker";
 import { ProviderMenu, ProviderTrigger } from "../components/ProviderPicker";
 import ProviderHint from "../components/ProviderHint";
@@ -18,7 +19,7 @@ import { onAsk } from "../lib/events";
 import { useMirroredWindow } from "../lib/mirror";
 import { useSettings } from "../stores/useSettings";
 import { PICKER } from "../lib/models";
-import type { Attachment } from "../lib/types";
+import { effortsOf, type Attachment } from "../lib/types";
 import {
   hideQuickBar,
   openWorkspace,
@@ -32,7 +33,7 @@ const THREAD_HEIGHT = 450;
 export default function QuickBar() {
   const [draft, setDraft] = useState("");
   const [files, setFiles] = useState<Attachment[]>([]);
-  const [picking, setPicking] = useState<"provider" | "model" | null>(null);
+  const [picking, setPicking] = useState<"provider" | "model" | "effort" | null>(null);
   const {
     providers,
     limits,
@@ -48,9 +49,15 @@ export default function QuickBar() {
     stop,
     selectProvider,
     selectModel,
+    selectEffort,
+    effort,
     loadProviders,
     newConversation,
   } = useChat();
+  const efforts = effortsOf(
+    providers.find((provider) => provider.id === providerId),
+    model,
+  );
   const context = currentContext(turns);
   const { tools, loadTools } = useSettings();
   const scroller = useRef<HTMLDivElement>(null);
@@ -240,6 +247,12 @@ export default function QuickBar() {
                 open={picking === "model"}
                 onToggle={() => setPicking((was) => (was === "model" ? null : "model"))}
               />
+              <EffortTrigger
+                efforts={efforts}
+                effort={effort}
+                open={picking === "effort"}
+                onToggle={() => setPicking((was) => (was === "effort" ? null : "effort"))}
+              />
             </>
           ) : (
             <ProviderHint providers={providers} />
@@ -273,6 +286,18 @@ export default function QuickBar() {
           limits={limits}
           onSelect={(next) => {
             selectProvider(next);
+            setPicking(null);
+          }}
+        />
+      ) : null}
+
+      {picking === "effort" ? (
+        <EffortMenu
+          className="px-3 pt-2"
+          efforts={efforts}
+          effort={effort}
+          onSelect={(next) => {
+            selectEffort(next);
             setPicking(null);
           }}
         />

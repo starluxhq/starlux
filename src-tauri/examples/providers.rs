@@ -14,7 +14,15 @@ fn main() {
             "{:<13} {:<12} {:?}",
             provider.id, provider.binary, provider.availability
         );
-        println!("              models: {:?}\n", provider.models);
+        for model in &provider.models {
+            let efforts = if model.efforts.is_empty() {
+                "no thinking levels".to_owned()
+            } else {
+                model.efforts.join(" ")
+            };
+            println!("              {:<42} {efforts}", model.id);
+        }
+        println!();
     }
     println!("PATH={}", std::env::var("PATH").unwrap_or_default());
 }

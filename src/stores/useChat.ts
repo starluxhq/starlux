@@ -12,6 +12,7 @@ import {
   truncateAfter,
 } from "../lib/ipc";
 import {
+  effortsOf,
   isReady,
   type Attachment,
   type Context,
@@ -43,6 +44,9 @@ interface ChatState {
   limits: Record<string, RateLimit>;
   providerId: string;
   model: string | null;
+  /** How hard to think, in the chosen model's own words. `null` leaves the
+   *  provider's default alone, and is the only choice most models offer. */
+  effort: string | null;
   /** The model each provider was last asked for. Picking a provider still has
    *  to pick a model, and the one that sorts first is rarely the one you left. */
   lastModel: Record<string, string>;
@@ -55,7 +59,8 @@ interface ChatState {
   loadProviders: () => Promise<void>;
   selectProvider: (providerId: string) => void;
   selectModel: (model: string) => void;
-  adoptSelection: (providerId: string, model: string) => void;
+  selectEffort: (effort: string | null) => void;
+  adoptSelection: (providerId: string, model: string, effort: string | null) => void;
   setAgentDir: (dir: string | null) => Promise<void>;
   apply: (event: StreamEvent) => void;
   openConversation: (id: string) => Promise<void>;
@@ -116,6 +121,7 @@ export const useChat = create<ChatState>((set, get) => ({
   limits: {},
   providerId: "claude-cli",
   model: null,
+  effort: null,
   lastModel: {},
   conversationId: null,
   sessionId: null,
@@ -135,10 +141,12 @@ export const useChat = create<ChatState>((set, get) => ({
       loadRateLimits(),
     ]);
     const usable = providers.filter(isReady);
+    const offers = (provider: Provider, model: string | undefined) =>
+      provider.models.some((known) => known.id === model);
     const chosen =
-      usable.find(
-        (provider) => provider.id === saved?.providerId && provider.models.includes(saved.model),
-      ) ?? usable[0];
+      usable.find((provider) => provider.id === saved?.providerId && offers(provider, saved.model)) ??
+      usable[0];
+    const model = chosen && (offers(chosen, saved?.model) ? saved!.model : chosen.models[0]?.id);
 
     set({
       providers,
@@ -146,7 +154,13 @@ export const useChat = create<ChatState>((set, get) => ({
       limits: Object.fromEntries(limits.map((limit) => [limit.providerId, limit])),
       ...(chosen && {
         providerId: chosen.id,
-        model: chosen.models.includes(saved?.model ?? "") ? saved!.model : chosen.models[0],
+        model: model ?? null,
+        // A level the model no longer offers is a stale row, not a choice:
+        // opencode's ladders move with the account, and asking for a rung that
+        // is gone would ask for something else.
+        effort: effortsOf(chosen, model ?? null).includes(saved?.effort ?? "")
+          ? saved!.effort!
+          : null,
       }),
     });
   },
@@ -158,24 +172,34 @@ export const useChat = create<ChatState>((set, get) => ({
     const model = modelFor(get(), providerId);
     if (!model || providerId === get().providerId) return;
 
-    get().adoptSelection(providerId, model);
-    void saveSelectedModel(providerId, model);
+    get().adoptSelection(providerId, model, null);
+    void saveSelectedModel(providerId, model, null);
   },
 
+  // The level goes with it: the ladders are per model, so `xhigh` carried from
+  // one to a model that stops at `high` would ask for a rung that is not there.
   selectModel: (model) => {
     const { providerId } = get();
-    get().adoptSelection(providerId, model);
-    void saveSelectedModel(providerId, model);
+    get().adoptSelection(providerId, model, null);
+    void saveSelectedModel(providerId, model, null);
+  },
+
+  selectEffort: (effort) => {
+    const { providerId, model } = get();
+    if (!model) return;
+    get().adoptSelection(providerId, model, effort);
+    void saveSelectedModel(providerId, model, effort);
   },
 
   // Applied without writing it back, so the window told about a choice does not
   // tell the other one in turn. A session belongs to the provider that issued
   // it, so changing provider abandons it here too — otherwise this window's
   // next turn hands the new CLI a stranger's session id.
-  adoptSelection: (providerId, model) =>
+  adoptSelection: (providerId, model, effort) =>
     set((state) => ({
       providerId,
       model,
+      effort,
       lastModel: { ...state.lastModel, [providerId]: model },
       sessionId: providerId === state.providerId ? state.sessionId : null,
     })),
@@ -359,13 +383,15 @@ export const useChat = create<ChatState>((set, get) => ({
 function modelFor(state: ChatState, providerId: string): string | null {
   const models = state.providers.find((provider) => provider.id === providerId)?.models ?? [];
   const remembered = state.lastModel[providerId];
-  return (remembered && models.includes(remembered) ? remembered : models[0]) ?? null;
+  const known = models.some((model) => model.id === remembered);
+  return (known ? remembered : models[0]?.id) ?? null;
 }
 
 /** One run, under an id the caller chooses — new for a question just asked,
  *  the old one for a question being asked again. */
 async function dispatch(runId: string, prompt: string, files: Attachment[]) {
-  const { conversationId, providerId, model, sessionId, agentDir, apply } = useChat.getState();
+  const { conversationId, providerId, model, effort, sessionId, agentDir, apply } =
+    useChat.getState();
   const id = conversationId ?? crypto.randomUUID();
 
   // Shown right away; the run replaces them with what the core actually read,
@@ -381,6 +407,7 @@ async function dispatch(runId: string, prompt: string, files: Attachment[]) {
         prompt,
         sessionId,
         model,
+        effort,
         agentDir,
         attachments: files.map((file) => file.path),
       },

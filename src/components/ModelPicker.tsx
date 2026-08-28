@@ -52,14 +52,14 @@ export function ModelMenu({ provider, model, onSelect, className = "" }: MenuPro
 
             {vendor.models.map((option) => (
               <button
-                key={option}
+                key={option.id}
                 type="button"
-                onClick={() => onSelect(option)}
+                onClick={() => onSelect(option.id)}
                 className={`block w-full px-3 py-1.5 text-left text-[12.5px] hover:bg-white/6 ${
-                  option === model ? "text-ink" : "text-muted"
+                  option.id === model ? "text-ink" : "text-muted"
                 }`}
               >
-                {modelName(option)}
+                {modelName(option.id)}
               </button>
             ))}
           </div>

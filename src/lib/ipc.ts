@@ -27,8 +27,8 @@ export const rememberedModels = () => invoke<Selection[]>("remembered_models");
 /** The last window each provider reported, so the bar has something to show
  *  before the first run of this launch refreshes it. */
 export const rateLimits = () => invoke<RateLimit[]>("rate_limits");
-export const saveSelectedModel = (providerId: string, model: string) =>
-  invoke<void>("set_selected_model", { providerId, model });
+export const saveSelectedModel = (providerId: string, model: string, effort: string | null) =>
+  invoke<void>("set_selected_model", { providerId, model, effort });
 export const sidebarCollapsed = () => invoke<boolean>("sidebar_collapsed");
 export const saveSidebarCollapsed = (collapsed: boolean) =>
   invoke<void>("set_sidebar_collapsed", { collapsed });

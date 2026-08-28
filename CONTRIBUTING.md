@@ -121,13 +121,13 @@ cargo run --example providers
 ```
 
 What the model picker would show, and why: which binaries were found on PATH,
-what each reports about being signed in, and the models it offered. A provider
-missing from the picker is usually a stale binary or a PATH without the CLI on
-it, and this says which.
+what each reports about being signed in, and the models it offered, each with
+the thinking levels it takes. A provider missing from the picker is usually a
+stale binary or a PATH without the CLI on it, and this says which.
 
 ```sh
 cargo run --example invocation -- opencode-cli "what colour is this?" blue.png
-SEARCH=1 MODEL=opus cargo run --example invocation -- claude-cli "what shipped?"
+SEARCH=1 MODEL=opus EFFORT=xhigh cargo run --example invocation -- claude-cli "what shipped?"
 FETCH=1 cargo run --example invocation -- gemini-cli "what does example.com say?"
 TITLE=1 cargo run --example invocation -- gemini-cli "how do pulsars work?"
 ```

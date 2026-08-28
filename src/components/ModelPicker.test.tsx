@@ -3,13 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 import { ModelMenu, ModelTrigger } from "./ModelPicker";
 import type { Provider } from "../lib/types";
 
-const provider = (models: string[]): Provider => ({
+const provider = (ids: string[]): Provider => ({
   id: "opencode-cli",
   name: "opencode",
   binary: "opencode",
   login: "opencode auth login",
   availability: { state: "ready", plan: null },
-  models,
+  models: ids.map((id) => ({ id, efforts: [] })),
   tools: ["webSearch", "webFetch"],
 });
 

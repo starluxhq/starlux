@@ -13,7 +13,10 @@ export function useMirroredWindow() {
 
   useEffect(() => onStream(applyMirrored), []);
   useEffect(
-    () => onSelection(({ providerId, model }) => adoptSelection(providerId, model)),
+    () =>
+      onSelection(({ providerId, model, effort }) =>
+        adoptSelection(providerId, model, effort ?? null),
+      ),
     [adoptSelection],
   );
   useEffect(() => onTools(adoptTools), [adoptTools]);

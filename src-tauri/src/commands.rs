@@ -62,6 +62,8 @@ pub async fn rate_limits(app: AppHandle) -> Result<Vec<RateLimit>, String> {
 pub struct Selection {
     provider_id: String,
     model: String,
+    /// `None` where nothing was chosen, and where the model offers no choice.
+    effort: Option<String>,
 }
 
 /// The model a run asks for, remembered across restarts. Kept apart from the
@@ -76,7 +78,11 @@ pub async fn selected_model(app: AppHandle) -> Result<Option<Selection>, String>
                 db.setting(db::SELECTED_PROVIDER)?,
                 db.setting(db::SELECTED_MODEL)?,
             ) {
-                (Some(provider_id), Some(model)) => Some(Selection { provider_id, model }),
+                (Some(provider_id), Some(model)) => Some(Selection {
+                    provider_id,
+                    model,
+                    effort: db.setting(db::SELECTED_EFFORT)?,
+                }),
                 _ => None,
             },
         )
@@ -90,14 +96,17 @@ pub async fn set_selected_model(
     window: Window,
     provider_id: String,
     model: String,
+    effort: Option<String>,
 ) -> Result<(), String> {
     let chosen = Selection {
         provider_id: provider_id.clone(),
         model: model.clone(),
+        effort: effort.clone(),
     };
     db::query(&app, move |db| {
         db.set_setting(db::SELECTED_PROVIDER, Some(&provider_id))?;
         db.set_setting(db::SELECTED_MODEL, Some(&model))?;
+        db.set_setting(db::SELECTED_EFFORT, effort.as_deref())?;
         db.remember_model(&provider_id, &model)
     })
     .await?;
@@ -120,7 +129,14 @@ pub async fn remembered_models(app: AppHandle) -> Result<Vec<Selection>, String>
         Ok(db
             .remembered_models()?
             .into_iter()
-            .map(|(provider_id, model)| Selection { provider_id, model })
+            // No level comes back with them: the levels belong to the model,
+            // and returning to a provider returns to a model whose ladder may
+            // not have the rung you left on.
+            .map(|(provider_id, model)| Selection {
+                provider_id,
+                model,
+                effort: None,
+            })
             .collect())
     })
     .await

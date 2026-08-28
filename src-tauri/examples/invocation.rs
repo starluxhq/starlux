@@ -25,6 +25,7 @@ fn main() {
         prompt,
         session_id: None,
         model: std::env::var("MODEL").ok(),
+        effort: std::env::var("EFFORT").ok(),
         agent_dir: None,
         tools: Tools {
             web_search: std::env::var("SEARCH").is_ok(),
