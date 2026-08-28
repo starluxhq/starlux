@@ -41,6 +41,13 @@ impl CliAdapter for ClaudeAdapter {
             args.push("--resume".into());
             args.push(session.clone());
         }
+        // The CLI validates this itself and warns rather than fails on a name
+        // it does not know, so a level from a stale picker costs the default
+        // effort and not the run.
+        if let Some(effort) = &req.effort {
+            args.push("--effort".into());
+            args.push(effort.clone());
+        }
 
         // Chat-only unless the conversation opted into agent mode. `--bare` is
         // deliberately not used: it forces ANTHROPIC_API_KEY auth, which would
@@ -401,6 +408,7 @@ mod tests {
             provider_id: "claude-cli".into(),
             prompt: "count to 3".into(),
             session_id: None,
+            effort: None,
             model: None,
             agent_dir: None,
             tools: Tools::default(),

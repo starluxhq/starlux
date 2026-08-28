@@ -11,7 +11,7 @@ const provider = (availability: Availability, over: Partial<Provider> = {}): Pro
   binary: "claude",
   login: "claude login",
   availability,
-  models: ["opus", "sonnet"],
+  models: [{ id: "opus", efforts: [] }, { id: "sonnet", efforts: [] }],
   tools: ["webSearch", "webFetch"],
   ...over,
 });

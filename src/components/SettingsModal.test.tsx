@@ -22,7 +22,7 @@ beforeEach(() => {
         binary: "claude",
         login: "claude login",
         availability: { state: "ready", plan: null },
-        models: ["opus"],
+        models: [{ id: "opus", efforts: [] }],
         tools: ["webSearch", "webFetch"],
       },
     ],

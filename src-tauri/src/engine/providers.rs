@@ -18,6 +18,19 @@ pub enum Availability {
     Ready { plan: Option<String> },
 }
 
+/// A model and how hard it can be asked to think. The levels are the model's
+/// own, not the provider's: `opencode-go/gpt-5.6-luna` offers six and
+/// `opencode-go/kimi-k3` offers one, so a ladder invented here would offer
+/// levels that do not exist.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Model {
+    pub id: String,
+    /// Empty where the model offers no choice, and where the CLI has no flag
+    /// to carry one — Gemini has neither.
+    pub efforts: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Provider {
@@ -29,7 +42,7 @@ pub struct Provider {
     /// somewhere that does not exist.
     pub login: &'static str,
     pub availability: Availability,
-    pub models: Vec<String>,
+    pub models: Vec<Model>,
     /// Which of Starlux's tools this CLI has to offer. Not every provider has
     /// every one — opencode ships a fetcher and no search — so a tool granted
     /// app-wide is still only reached where it exists.
@@ -44,6 +57,9 @@ struct Entry {
     /// Empty where the binary is the only honest source, and the models the
     /// user has depend on what they are signed in to.
     models: &'static [&'static str],
+    /// What every model of this provider can be asked for, where the CLI takes
+    /// one flag for the whole session rather than a per-model list.
+    efforts: &'static [&'static str],
     tools: &'static [&'static str],
 }
 
@@ -54,6 +70,9 @@ const CATALOG: &[Entry] = &[
         binary: "claude",
         login: "claude login",
         models: &["opus", "sonnet", "haiku"],
+        // `--effort`, whose levels the CLI names in its own help and warns
+        // about when they are not one of these.
+        efforts: &["low", "medium", "high", "xhigh", "max"],
         tools: &[WEB_SEARCH, WEB_FETCH],
     },
     Entry {
@@ -65,6 +84,8 @@ const CATALOG: &[Entry] = &[
         // rather than what the docs imply exists: `gemini-3-pro` is a 404.
         // `auto` is the CLI's own router, and its default.
         models: &["auto", "gemini-3.5-flash", "gemini-3.1-flash-lite"],
+        // It has no flag for this at all, so there is nothing to offer.
+        efforts: &[],
         tools: &[WEB_SEARCH, WEB_FETCH],
     },
     Entry {
@@ -73,6 +94,8 @@ const CATALOG: &[Entry] = &[
         binary: "opencode",
         login: "opencode auth login",
         models: &[],
+        // Per model, and read from the binary — see `catalogued`.
+        efforts: &[],
         // No search tool exists to grant, only the fetcher.
         tools: &[WEB_FETCH],
     },
@@ -111,7 +134,7 @@ fn probe() -> Vec<Provider> {
 
 fn one(entry: &Entry) -> Provider {
     let missing = which::which(entry.binary).is_err();
-    let models: Vec<String> = if missing {
+    let models = if missing {
         Vec::new()
     } else {
         available_models(entry)
@@ -132,18 +155,75 @@ fn one(entry: &Entry) -> Provider {
     }
 }
 
-fn available_models(entry: &Entry) -> Vec<String> {
-    if !entry.models.is_empty() {
-        return entry
-            .models
-            .iter()
-            .map(|model| (*model).to_owned())
-            .collect();
+fn available_models(entry: &Entry) -> Vec<Model> {
+    if entry.models.is_empty() {
+        return described(&String::from_utf8_lossy(
+            &output(entry.binary, &["models", "--verbose"]).unwrap_or_default(),
+        ));
     }
-    lines(entry.binary, &["models"])
+    entry
+        .models
+        .iter()
+        .map(|id| Model {
+            id: (*id).to_owned(),
+            efforts: entry.efforts.iter().map(|e| (*e).to_owned()).collect(),
+        })
+        .collect()
 }
 
-fn availability(entry: &Entry, models: &[String]) -> Availability {
+/// How hard a model can be asked to think, ranked. The names come from the
+/// provider, so an unfamiliar one is kept and put last rather than dropped:
+/// `opencode-go/minimax-m3` offers `none` and `thinking`, which is not a ladder
+/// at all, and hiding the half we do not recognise would hide the useful half.
+const LADDER: [&str; 7] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+fn rank(effort: &str) -> usize {
+    LADDER
+        .iter()
+        .position(|known| *known == effort)
+        .unwrap_or(LADDER.len())
+}
+
+/// `opencode models --verbose` prints an id, then the pretty-printed JSON
+/// describing it, over and over. Only those ids share the left margin with the
+/// objects' own outer braces, which is what makes them separable without
+/// reimplementing a parser — and what a compact `--verbose` would break, so the
+/// fixture test is the thing that notices.
+fn described(printed: &str) -> Vec<Model> {
+    let json: String = printed
+        .lines()
+        .filter(|line| line.starts_with([' ', '{', '}']))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    serde_json::Deserializer::from_str(&json)
+        .into_iter::<Value>()
+        .filter_map(Result::ok)
+        .filter_map(|described| model_of(&described))
+        .collect()
+}
+
+fn model_of(described: &Value) -> Option<Model> {
+    let vendor = described.get("providerID")?.as_str()?;
+    let id = described.get("id")?.as_str()?;
+
+    // Sorted here because the CLI hands them over as a JSON object and serde
+    // gives back its keys in alphabetical order, which would rank `high` below
+    // `low` and `max` between them.
+    let mut efforts: Vec<String> = described
+        .get("variants")
+        .and_then(Value::as_object)
+        .map(|variants| variants.keys().cloned().collect())
+        .unwrap_or_default();
+    efforts.sort_by_key(|effort| rank(effort));
+
+    Some(Model {
+        id: format!("{vendor}/{id}"),
+        efforts,
+    })
+}
+
+fn availability(entry: &Entry, models: &[Model]) -> Availability {
     match entry.id {
         "claude-cli" => signed_in(entry.binary, &["auth", "status"]),
         // What it can run is what it is signed in to: an empty list is the
@@ -176,20 +256,6 @@ fn read_auth(report: &Value) -> Availability {
             .and_then(Value::as_str)
             .map(str::to_owned),
     }
-}
-
-/// Plain lines out, for a CLI that answers with a list rather than JSON.
-fn lines(binary: &str, args: &[&str]) -> Vec<String> {
-    output(binary, args)
-        .map(|out| {
-            String::from_utf8_lossy(&out)
-                .lines()
-                .map(str::trim)
-                .filter(|line| !line.is_empty())
-                .map(str::to_owned)
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 fn ask(binary: &str, args: &[&str]) -> Option<Value> {
@@ -225,6 +291,93 @@ fn output(binary: &str, args: &[&str]) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Three real models from opencode 1.18.21, kept because the shape of this
+    /// output is not a promise: it drifts, and a compact `--verbose` would leave
+    /// every model unreadable rather than loudly wrong.
+    const MODELS: &str = include_str!("../../tests/fixtures/opencode-models.txt");
+
+    fn efforts_of(models: &[Model], id: &str) -> Vec<String> {
+        models
+            .iter()
+            .find(|model| model.id == id)
+            .unwrap_or_else(|| panic!("{id} is in the fixture"))
+            .efforts
+            .clone()
+    }
+
+    #[test]
+    fn reads_each_model_out_of_the_printed_descriptions() {
+        let models = described(MODELS);
+        let ids: Vec<&str> = models.iter().map(|model| model.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            [
+                "opencode-go/glm-5.3",
+                "opencode-go/minimax-m3",
+                "opencode-go/qwen3.7-max"
+            ]
+        );
+    }
+
+    /// Alphabetically these are `high, low, max`, which reads as a ladder and
+    /// is not one.
+    #[test]
+    fn ranks_the_levels_rather_than_alphabetising_them() {
+        assert_eq!(
+            efforts_of(&described(MODELS), "opencode-go/glm-5.3"),
+            ["low", "high", "max"]
+        );
+    }
+
+    /// Not every model offers a ladder. `thinking` is not a level we know, and
+    /// dropping it would leave a switch with one position.
+    #[test]
+    fn keeps_a_level_it_does_not_recognise_and_puts_it_last() {
+        assert_eq!(
+            efforts_of(&described(MODELS), "opencode-go/minimax-m3"),
+            ["none", "thinking"]
+        );
+    }
+
+    #[test]
+    fn a_model_that_offers_no_choice_offers_none() {
+        assert!(efforts_of(&described(MODELS), "opencode-go/qwen3.7-max").is_empty());
+    }
+
+    #[test]
+    fn nothing_printed_describes_nothing() {
+        assert!(described("").is_empty());
+        assert!(described("opencode is not signed in").is_empty());
+    }
+
+    /// Where the CLI takes one flag for the session, every model carries the
+    /// same levels rather than the list being attached to the provider.
+    #[test]
+    fn a_catalogued_provider_hands_its_levels_to_each_model() {
+        let claude = CATALOG
+            .iter()
+            .find(|entry| entry.id == "claude-cli")
+            .unwrap();
+        let models = available_models(claude);
+        assert_eq!(models.len(), 3);
+        assert!(models
+            .iter()
+            .all(|model| model.efforts == ["low", "medium", "high", "xhigh", "max"]));
+    }
+
+    /// It has no flag to carry one, so offering a level would be offering
+    /// something that goes nowhere.
+    #[test]
+    fn gemini_offers_no_levels_because_it_has_no_flag() {
+        let gemini = CATALOG
+            .iter()
+            .find(|entry| entry.id == "gemini-cli")
+            .unwrap();
+        assert!(available_models(gemini)
+            .iter()
+            .all(|model| model.efforts.is_empty()));
+    }
 
     fn auth(json: &str) -> Availability {
         read_auth(&serde_json::from_str(json).unwrap())

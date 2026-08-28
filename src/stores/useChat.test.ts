@@ -179,7 +179,10 @@ const catalog = () => [
     binary: "claude",
     login: "claude login",
     availability: { state: "ready", plan: null },
-    models: ["opus", "sonnet"],
+    models: [
+      { id: "opus", efforts: ["low", "high", "max"] },
+      { id: "sonnet", efforts: ["low", "high", "max"] },
+    ],
     web: true,
   },
   {
@@ -188,7 +191,10 @@ const catalog = () => [
     binary: "opencode",
     login: "opencode auth login",
     availability: { state: "ready", plan: null },
-    models: ["opencode/big-pickle", "opencode-go/glm-5.3"],
+    models: [
+      { id: "opencode/big-pickle", efforts: [] },
+      { id: "opencode-go/glm-5.3", efforts: ["low", "high", "max"] },
+    ],
     web: true,
   },
 ];
@@ -241,11 +247,36 @@ describe("choosing a provider and a model", () => {
     expect(useChat.getState().sessionId).toBe("sess-claude");
   });
 
+  // The ladders are the model's own, so a level cannot follow a model that
+  // does not have that rung: `glm-5.3` stops at `max` and Claude's at `high`
+  // here, and carrying one across would ask for something that is not there.
+  it("drops the thinking level when the model changes", () => {
+    useChat.setState({ effort: "max" });
+    useChat.getState().selectModel("sonnet");
+
+    expect(useChat.getState().effort).toBeNull();
+    expect(ipc.saveSelectedModel).toHaveBeenCalledWith("claude-cli", "sonnet", null);
+  });
+
+  it("drops it when the provider changes too", () => {
+    useChat.setState({ effort: "max" });
+    useChat.getState().selectProvider("opencode-cli");
+    expect(useChat.getState().effort).toBeNull();
+  });
+
+  it("writes a chosen level against the model it belongs to", () => {
+    useChat.setState({ model: "opus" });
+    useChat.getState().selectEffort("high");
+
+    expect(useChat.getState().effort).toBe("high");
+    expect(ipc.saveSelectedModel).toHaveBeenCalledWith("claude-cli", "opus", "high");
+  });
+
   // Both windows hold the choice, and it is written once. The window told
   // about it must not write it back, or the two answer each other forever.
   it("adopts the other window's choice without writing it back", () => {
     useChat.setState({ sessionId: "sess-claude" });
-    useChat.getState().adoptSelection("opencode-cli", "opencode-go/glm-5.3");
+    useChat.getState().adoptSelection("opencode-cli", "opencode-go/glm-5.3", null);
 
     const { providerId, model, sessionId, lastModel } = useChat.getState();
     expect({ providerId, model, sessionId }).toEqual({
@@ -259,14 +290,14 @@ describe("choosing a provider and a model", () => {
 
   it("keeps this window's session when only the model moved", () => {
     useChat.setState({ sessionId: "sess-claude" });
-    useChat.getState().adoptSelection("claude-cli", "sonnet");
+    useChat.getState().adoptSelection("claude-cli", "sonnet", null);
     expect(useChat.getState().sessionId).toBe("sess-claude");
   });
 
   it("remembers a model against the provider it belongs to", () => {
     useChat.getState().selectModel("sonnet");
     expect(useChat.getState().lastModel).toEqual({ "claude-cli": "sonnet" });
-    expect(ipc.saveSelectedModel).toHaveBeenCalledWith("claude-cli", "sonnet");
+    expect(ipc.saveSelectedModel).toHaveBeenCalledWith("claude-cli", "sonnet", null);
   });
 });
 
@@ -303,7 +334,7 @@ describe("opening a conversation", () => {
 
     const { providerId, model } = useChat.getState();
     expect(providerId).toBe("claude-cli");
-    expect(catalog()[0].models).toContain(model);
+    expect(catalog()[0].models.map((known) => known.id)).toContain(model);
   });
 
   it("returns to the model that provider was last asked for", async () => {

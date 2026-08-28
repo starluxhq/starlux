@@ -34,6 +34,13 @@ impl CliAdapter for OpencodeAdapter {
             args.push("-s".into());
             args.push(session.clone());
         }
+        // opencode calls a thinking level a variant, and which ones exist is
+        // the model's own answer — `providers` reads them from the same binary
+        // rather than offering a ladder every model is assumed to have.
+        if let Some(effort) = &req.effort {
+            args.push("--variant".into());
+            args.push(effort.clone());
+        }
 
         args.push("--agent".into());
         args.push(CHAT_AGENT.into());
@@ -277,6 +284,7 @@ mod tests {
             provider_id: "opencode-cli".into(),
             prompt: "what colour is this?".into(),
             session_id: None,
+            effort: None,
             model: Some("opencode/hy3-free".into()),
             agent_dir: None,
             tools: Tools::default(),
@@ -524,6 +532,30 @@ mod tests {
             "\n",
         );
         assert_eq!(OpencodeAdapter.title_text(printed), "Spectral classes");
+    }
+
+    #[test]
+    fn no_level_chosen_leaves_the_variant_flag_off() {
+        let invocation = OpencodeAdapter.invocation(&request(), &[]);
+        assert!(!invocation.args.iter().any(|arg| arg == "--variant"));
+    }
+
+    /// opencode spells a thinking level `--variant`, and the names are the
+    /// model's own: `max` exists on `glm-5.3` and `thinking` on `minimax-m3`.
+    #[test]
+    fn carries_the_chosen_thinking_level_as_a_variant() {
+        let mut req = request();
+        req.effort = Some("max".into());
+        let invocation = OpencodeAdapter.invocation(&req, &[]);
+        let at = invocation
+            .args
+            .iter()
+            .position(|a| a == "--variant")
+            .unwrap();
+        assert_eq!(invocation.args[at + 1], "max");
+        // Still ahead of the separator, or it reads as part of the message.
+        let stop = invocation.args.iter().position(|a| a == "--").unwrap();
+        assert!(at < stop);
     }
 
     #[test]

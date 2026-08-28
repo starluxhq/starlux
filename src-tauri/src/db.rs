@@ -69,6 +69,9 @@ pub const ACTIVE_CONVERSATION: &str = "active_conversation";
 /// What the next run will ask for, which outlives any one conversation.
 pub const SELECTED_PROVIDER: &str = "selected_provider";
 pub const SELECTED_MODEL: &str = "selected_model";
+/// How hard the chosen model is asked to think. Absent means the provider's
+/// own default, which is not the same as any level it offers.
+pub const SELECTED_EFFORT: &str = "selected_effort";
 /// Whether the Workspace's conversation list is slid away.
 pub const SIDEBAR_COLLAPSED: &str = "sidebar_collapsed";
 /// One row per provider holding the model last asked of it, so switching

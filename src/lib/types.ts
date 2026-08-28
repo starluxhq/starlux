@@ -56,6 +56,7 @@ export interface RunRequest {
   prompt: string;
   sessionId?: string | null;
   model?: string | null;
+  effort?: string | null;
   agentDir?: string | null;
   attachments?: string[];
 }
@@ -100,6 +101,17 @@ export interface Thread {
 export interface Selection {
   providerId: string;
   model: string;
+  effort?: string | null;
+}
+
+/** A model and how hard it can be asked to think. The levels are the model's
+ *  own: `opencode-go/gpt-5.6-luna` offers six, `opencode-go/kimi-k3` offers
+ *  one, and `opencode-go/minimax-m3` offers `none` and `thinking`, which is
+ *  not a ladder. Empty where the model offers no choice, or the CLI has no
+ *  flag to carry one. */
+export interface Model {
+  id: string;
+  efforts: string[];
 }
 
 /** Installed and signed in are different problems with different fixes, so a
@@ -116,7 +128,7 @@ export interface Provider {
   /** What to run to sign in, in full — `opencode login` is not a command. */
   login: string;
   availability: Availability;
-  models: string[];
+  models: Model[];
   /** Which of Starlux's tools this CLI has to offer. Not every provider has
    *  every one, so a tool granted app-wide is still only reached where it
    *  exists. */
@@ -124,6 +136,12 @@ export interface Provider {
 }
 
 export const isReady = (provider: Provider) => provider.availability.state === "ready";
+
+/** What the chosen model can be asked for, which is nothing at all for most of
+ *  them. Reached by id rather than by index: the picker holds the id it was
+ *  given, and the list under it is refetched. */
+export const effortsOf = (provider: Provider | undefined, model: string | null): string[] =>
+  provider?.models.find((known) => known.id === model)?.efforts ?? [];
 
 export type SpectralClass = "a" | "f" | "g" | "k" | "m";
 

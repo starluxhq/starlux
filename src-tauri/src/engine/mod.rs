@@ -39,6 +39,11 @@ pub struct RunRequest {
     pub session_id: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
+    /// How hard to think, in the chosen model's own vocabulary. `None` leaves
+    /// the provider's default alone, which is the only honest way to say
+    /// nothing: the levels differ per model and there is no shared middle.
+    #[serde(default)]
+    pub effort: Option<String>,
     /// `Some(dir)` enables the provider's tools, pinned to that directory.
     /// `None` is chat-only: the CLI cannot touch the filesystem.
     #[serde(default)]
