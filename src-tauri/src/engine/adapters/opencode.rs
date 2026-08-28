@@ -87,18 +87,27 @@ impl CliAdapter for OpencodeAdapter {
         }
     }
 
-    fn title_invocation(&self, question: &str) -> Invocation {
+    /// Named on the conversation's own model. opencode otherwise resolves one
+    /// itself — a cheaper model from the provider, else the configured default —
+    /// and that default is reached whether or not the account can still spend
+    /// on it, so a conversation answered on a free model went unnamed against a
+    /// paid one. The model the user picked is the only one known to work.
+    fn title_invocation(&self, question: &str, model: Option<&str>) -> Invocation {
+        let mut args = vec!["run".into(), "--format".into(), "json".into()];
+
+        if let Some(model) = model {
+            args.push("-m".into());
+            args.push(model.to_owned());
+        }
+
+        args.push("--agent".into());
+        args.push(TITLE_AGENT.into());
+        args.push("--".into());
+        args.push(question.to_owned());
+
         Invocation {
             program: "opencode".into(),
-            args: vec![
-                "run".into(),
-                "--format".into(),
-                "json".into(),
-                "--agent".into(),
-                TITLE_AGENT.into(),
-                "--".into(),
-                question.to_owned(),
-            ],
+            args,
             stdin: None,
             cwd: None,
             env: vec![(CONFIG_ENV.into(), config(title_agent()))],
@@ -582,12 +591,32 @@ mod tests {
 
     #[test]
     fn naming_a_conversation_is_toolless_and_starts_no_session() {
-        let invocation = OpencodeAdapter.title_invocation("what is a spectral class?");
+        let invocation = OpencodeAdapter.title_invocation("what is a spectral class?", None);
         assert_eq!(
             permission(&invocation, TITLE_AGENT),
             serde_json::json!({ "*": "deny" })
         );
         assert!(!invocation.args.iter().any(|arg| arg == "-s"));
+        assert_eq!(invocation.args.last().unwrap(), "what is a spectral class?");
+    }
+
+    /// Naming nothing left opencode to resolve a model itself, and it resolved
+    /// one the account could not spend on: a conversation answered on a free
+    /// model failed to be named against a paid default, with `Insufficient
+    /// balance`. The model the user picked is the one known to work.
+    #[test]
+    fn a_conversation_is_named_on_the_model_it_is_answered_on() {
+        let invocation = OpencodeAdapter.title_invocation("what is a spectral class?", None);
+        assert!(!invocation.args.iter().any(|arg| arg == "-m"));
+
+        let invocation = OpencodeAdapter
+            .title_invocation("what is a spectral class?", Some("opencode/hy3-free"));
+        let at = invocation
+            .args
+            .iter()
+            .position(|arg| arg == "-m")
+            .expect("the naming run must not pick its own model");
+        assert_eq!(invocation.args[at + 1], "opencode/hy3-free");
         assert_eq!(invocation.args.last().unwrap(), "what is a spectral class?");
     }
 

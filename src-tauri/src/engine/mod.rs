@@ -270,7 +270,12 @@ pub trait CliAdapter: Send + Sync {
     /// for the conversation. On the trait rather than inside the Claude adapter
     /// so the next provider gets titles by writing its own argv, not by being
     /// special-cased.
-    fn title_invocation(&self, question: &str) -> Invocation;
+    ///
+    /// `model` is the one the conversation is answering on, offered rather than
+    /// imposed: a provider with a small model worth naming picks that instead.
+    /// Naming nothing is what an adapter must not do — the CLI then resolves a
+    /// model of its own, which is not one the user chose or can be sure of.
+    fn title_invocation(&self, question: &str, model: Option<&str>) -> Invocation;
 
     fn parse_line(&self, line: &str, state: &mut ParseState, req: &RunRequest) -> Vec<StreamEvent>;
 
