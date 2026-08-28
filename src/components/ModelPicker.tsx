@@ -1,4 +1,4 @@
-import { modelLabel, modelName, PICKER } from "../lib/models";
+import { byVendor, modelName, PICKER } from "../lib/models";
 import type { Provider } from "../lib/types";
 
 interface TriggerProps {
@@ -9,7 +9,7 @@ interface TriggerProps {
 
 /** Which model of the chosen provider. The provider is named beside it, so the
  *  vendor prefix an id like `opencode-go/glm-5.3` carries is redundant here and
- *  only the model's own name is shown. The menu still lists it in full. */
+ *  only the model's own name is shown. */
 export function ModelTrigger({ model, open, onToggle }: TriggerProps) {
   return (
     <button
@@ -38,18 +38,31 @@ export function ModelMenu({ provider, model, onSelect, className = "" }: MenuPro
 
   return (
     <div {...{ [PICKER]: "" }} className={className}>
-      <div className="ml-auto max-h-56 w-56 overflow-y-auto rounded-lg border border-rule bg-haze shadow-xl shadow-black/40">
-        {provider.models.map((option) => (
-          <button
-            key={option}
-            type="button"
-            onClick={() => onSelect(option)}
-            className={`block w-full px-3 py-1.5 text-left text-[12.5px] hover:bg-white/6 ${
-              option === model ? "text-ink" : "text-muted"
-            }`}
-          >
-            {modelLabel(option)}
-          </button>
+      <div className="ml-auto max-h-72 w-56 overflow-y-auto rounded-lg border border-rule bg-haze shadow-xl shadow-black/40">
+        {byVendor(provider.models).map((vendor) => (
+          <div key={vendor.name ?? ""}>
+            {/* Sticky because thirty models scroll past in one menu, and which
+                account you are picking from is the thing worth keeping on
+                screen while you do. */}
+            {vendor.name ? (
+              <p className="sticky top-0 bg-haze px-3 pt-2.5 pb-1 font-mono text-[10px] tracking-wide text-faint uppercase">
+                {vendor.name}
+              </p>
+            ) : null}
+
+            {vendor.models.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => onSelect(option)}
+                className={`block w-full px-3 py-1.5 text-left text-[12.5px] hover:bg-white/6 ${
+                  option === model ? "text-ink" : "text-muted"
+                }`}
+              >
+                {modelName(option)}
+              </button>
+            ))}
+          </div>
         ))}
       </div>
     </div>
