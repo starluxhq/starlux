@@ -1,8 +1,8 @@
 use serde_json::Value;
 
 use crate::engine::{
-    system_prompt, Block, CliAdapter, Invocation, Loaded, ParseState, RunRequest, StreamEvent,
-    Usage,
+    question, system_prompt, Block, CliAdapter, Invocation, Loaded, ParseState, RunRequest,
+    StreamEvent, Usage,
 };
 
 /// Namespaced so a user's own agent of the same name is never the one that runs.
@@ -73,7 +73,7 @@ impl CliAdapter for OpencodeAdapter {
         // `-f` is a yargs array flag and swallows the positional message, which
         // then reads as a filename: `File not found: What colour is this?`.
         args.push("--".into());
-        args.push(req.prompt.clone());
+        args.push(question(req));
 
         Invocation {
             program: "opencode".into(),
@@ -318,6 +318,7 @@ mod tests {
             agent_dir: None,
             tools: Tools::default(),
             attachments: Vec::new(),
+            history: Vec::new(),
         }
     }
 
@@ -598,6 +599,19 @@ mod tests {
         );
         assert!(!invocation.args.iter().any(|arg| arg == "-s"));
         assert_eq!(invocation.args.last().unwrap(), "what is a spectral class?");
+    }
+
+    #[test]
+    fn a_thread_it_has_not_seen_arrives_before_the_question() {
+        let mut req = request();
+        req.history = vec![crate::engine::Past {
+            role: "user".into(),
+            text: "what is a pulsar?".into(),
+        }];
+        let invocation = OpencodeAdapter.invocation(&req, &[]);
+        let sent = invocation.args.last().unwrap();
+        assert!(sent.contains("User: what is a pulsar?"));
+        assert!(sent.ends_with(&req.prompt));
     }
 
     /// Naming nothing left opencode to resolve a model itself, and it resolved

@@ -79,7 +79,9 @@ compiles `windows/macos.rs` or `windows/generic.rs`.
 - **SQLite is the source of truth.** Both windows are views over the Rust core;
   state is not handed between them, and a run reads its grants back from the
   database rather than trusting the window that asked. What one window changes
-  reaches the other as an event, never as a second write.
+  reaches the other as an event, never as a second write. A provider joining a
+  conversation it did not answer is told what was said from the same place, so
+  a window cannot put words in the user's mouth.
 - **`rusqlite` runs under `spawn_blocking`.** SQLite is synchronous.
 - **Platform quirks live in `src-tauri/src/windows/`.** A workaround leaking into
   feature code is a bug in the layering.

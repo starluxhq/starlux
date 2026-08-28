@@ -5,6 +5,67 @@
 //! turn on tool scaffolding a launcher never uses, and answers in the register
 //! of a terminal session rather than a desktop assistant.
 
+use super::Past;
+
+/// How much of a carried conversation is sent, in bytes.
+///
+/// Bounded by argv rather than by the model: gemini takes its prompt as an
+/// argument, and Linux refuses a single argument over 128 KiB outright. That
+/// limit has nothing to do with what a model could have read, which is why this
+/// is not a context calculation and does not pretend to be one.
+const CARRIED_BYTES: usize = 60_000;
+
+/// The thread so far, for a provider that has not answered in it — what
+/// changing provider mid-conversation leaves behind.
+///
+/// Sent as ordinary text ahead of the question, because that is the one thing
+/// all three CLIs can take. The newest turns are kept and the oldest dropped,
+/// and a thread that did not fit says so rather than reading as the whole of
+/// what was said.
+pub fn carried(history: &[Past]) -> Option<String> {
+    if history.is_empty() {
+        return None;
+    }
+
+    let mut kept: Vec<String> = Vec::new();
+    let mut spent = 0;
+    for turn in history.iter().rev() {
+        let text = turn.text.trim();
+        if text.is_empty() {
+            continue;
+        }
+        let speaker = if turn.role == "assistant" {
+            "Assistant"
+        } else {
+            "User"
+        };
+        let rendered = format!("{speaker}: {text}");
+        if spent + rendered.len() > CARRIED_BYTES {
+            break;
+        }
+        spent += rendered.len();
+        kept.push(rendered);
+    }
+
+    if kept.is_empty() {
+        return None;
+    }
+    if kept.len() < history.len() {
+        kept.push("[earlier messages are not included]".to_owned());
+    }
+    kept.reverse();
+
+    Some(format!(
+        "The conversation so far, answered by a different assistant:
+
+{}
+
+That is the conversation you are joining. Do not reply to it. Answer only the \
+message that follows.",
+        kept.join("\n\n")
+    ))
+}
+
 /// Rules both modes need, so a widget or an equation renders the same either way.
 const FORMATTING: &str = "\
 Mathematics is always LaTeX: inline as $...$, display as $$...$$. Never write an \
@@ -79,6 +140,47 @@ Answer the message with a title for it. Never answer the message itself."
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn past(role: &str, text: &str) -> Past {
+        Past {
+            role: role.into(),
+            text: text.into(),
+        }
+    }
+
+    #[test]
+    fn a_thread_with_nothing_in_it_carries_nothing() {
+        assert_eq!(carried(&[]), None);
+        assert_eq!(carried(&[past("user", "   ")]), None);
+    }
+
+    #[test]
+    fn both_sides_of_the_thread_are_named_and_the_question_is_not_reopened() {
+        let text = carried(&[
+            past("user", "what is a pulsar?"),
+            past("assistant", "a spinning neutron star"),
+        ])
+        .unwrap();
+        assert!(text.contains("User: what is a pulsar?"));
+        assert!(text.contains("Assistant: a spinning neutron star"));
+        assert!(text.contains("Do not reply to it"));
+    }
+
+    /// The oldest go first, and the gap is declared: a thread that silently
+    /// lost its beginning reads as the whole of what was said.
+    #[test]
+    fn a_thread_too_long_for_argv_keeps_the_newest_and_says_so() {
+        let bulk = "x".repeat(CARRIED_BYTES / 2);
+        let text = carried(&[
+            past("user", &bulk),
+            past("assistant", &bulk),
+            past("user", "the newest thing said"),
+        ])
+        .unwrap();
+        assert!(text.contains("the newest thing said"));
+        assert!(text.contains("earlier messages are not included"));
+        assert!(text.len() < CARRIED_BYTES * 2);
+    }
 
     #[test]
     fn both_modes_carry_the_same_rendering_rules() {
